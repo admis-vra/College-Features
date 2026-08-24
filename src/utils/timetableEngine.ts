@@ -336,7 +336,7 @@ export function parseNaturalLanguageQuery(text: string, currentDayOverride?: str
   };
 }
 
-export async function queryServerlessChat(userMessage: string, contextData: string, model: string, localApiKey?: string): Promise<string> {
+export async function queryServerlessChat(userMessage: string, contextData: string, localApiKey?: string): Promise<string> {
   // If a local API Key is provided, call OpenRouter directly from the browser (bypasses serverless proxy)
   if (localApiKey) {
     const systemPrompt = `You are an intelligent, helpful university AI agent. 
@@ -360,7 +360,7 @@ Instructions:
           "X-Title": "Classroom Finder AI Agent"
         },
         body: JSON.stringify({
-          model: model,
+          model: 'meta-llama/llama-3.1-8b-instruct:free',
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage }
@@ -391,8 +391,7 @@ Instructions:
       },
       body: JSON.stringify({
         message: userMessage,
-        context: contextData,
-        model: model
+        context: contextData
       })
     });
 

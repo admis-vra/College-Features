@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { message, context, model } = req.body;
+  const { message, context } = req.body;
   const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
@@ -46,7 +46,7 @@ Instructions:
         "X-Title": "Classroom Finder AI Agent"
       },
       body: JSON.stringify({
-        model: model || 'meta-llama/llama-3-8b-instruct:free',
+        model: 'meta-llama/llama-3.1-8b-instruct:free',
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: message }
