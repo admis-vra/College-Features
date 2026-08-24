@@ -230,6 +230,110 @@ export function runAgenticAI(userQuery: string): AgentResponse {
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const currentTimeStr = minutesToTimeString(currentMinutes);
 
+  // =============================================================
+  // INTENT LAYER 1: GREETINGS & SOCIAL CONVERSATION
+  // =============================================================
+  const greetings = ['hi', 'hello', 'hey', 'heya', 'hola', 'namaste', 'greetings', 'sup', 'yo'];
+  if (greetings.includes(clean) || clean.startsWith('hello ') || clean.startsWith('hey ') || clean.startsWith('hi ') || clean === 'hello there' || clean === 'hey there') {
+    return {
+      toolUsed: 'ConversationalGreetingTool',
+      text: `👋 **Hello! Welcome to the GEHU Classroom Finder Agent.**\n\n` +
+            `I'm your intelligent campus assistant. How can I help you today? Here are some things you can ask me:\n\n` +
+            `• 🧪 *"Are there any labs free right now?"*\n` +
+            `• 🏫 *"What class is in room 124 right now?"*\n` +
+            `• 🎓 *"Show me Section A's timetable on Monday"*\n` +
+            `• 🕒 *"Which rooms are vacant tomorrow at 10 AM?"*\n` +
+            `• 📊 *"Show me campus statistics and total classrooms"*`
+    };
+  }
+
+  if (clean.includes('how are you') || clean.includes('how r u') || clean.includes('how do you do') || clean.includes('whats up') || clean.includes("what's up")) {
+    return {
+      toolUsed: 'ConversationalSmalltalkTool',
+      text: `😊 I'm doing great and ready to assist you!\n\n` +
+            `All classroom schedules and vacancy records for GEHU are loaded in memory. Ask me about free rooms, lecture routines, or specific classrooms whenever you need!`
+    };
+  }
+
+  // =============================================================
+  // INTENT LAYER 2: IDENTITY, CAPABILITIES & HELP
+  // =============================================================
+  if (clean.includes('who are you') || clean.includes('what are you') || clean.includes('what can you do') || clean.includes('help me') || clean === 'help' || clean.includes('your name') || clean.includes('features')) {
+    return {
+      toolUsed: 'AgentCapabilitiesTool',
+      text: `🤖 **About GEHU ClassFinder AI Agent**:\n\n` +
+            `I am a custom-built autonomous AI agent designed specifically for Graphic Era Hill University (GEHU).\n\n` +
+            `**My Key Capabilities:**\n` +
+            `1. 🔍 **Real-Time Room Vacancy:** Find free Classrooms (CR), Lecture Theatres (LT), and Labs (LAB) right now or at any specific hour.\n` +
+            `2. 📍 **Live Room Status:** Inspect whether a classroom is occupied right now, who is teaching, and the subject/course being conducted.\n` +
+            `3. 📅 **Section Timetables:** Look up daily class schedules for sections (A, B, ML, AI, DS, BCA, MCA, etc.).\n` +
+            `4. 📖 **Subject Tracking:** Search for lecture locations (e.g., Python, Cryptography, Cloud Computing, OOPS).\n` +
+            `5. 📊 **Campus Overview:** Instant analytics on room allocation, floor filters, and total classrooms.`
+    };
+  }
+
+  // =============================================================
+  // INTENT LAYER 3: GRATITUDE & POLITE CLOSINGS
+  // =============================================================
+  if (clean === 'thank you' || clean === 'thanks' || clean === 'thx' || clean.startsWith('thanks') || clean.startsWith('thank you') || clean === 'good job' || clean === 'great' || clean === 'awesome' || clean === 'perfect' || clean === 'cool') {
+    return {
+      toolUsed: 'ConversationalGratitudeTool',
+      text: `🎉 You're very welcome! Let me know if you need to find another room or check upcoming lecture schedules. Have a productive day! 🚀`
+    };
+  }
+
+  if (clean === 'bye' || clean === 'goodbye' || clean === 'see you' || clean === 'ok' || clean === 'okay' || clean === 'got it') {
+    return {
+      toolUsed: 'ConversationalClosingTool',
+      text: `👍 Sounds good! Feel free to ask anytime you need a vacant classroom or timetable info.`
+    };
+  }
+
+  // =============================================================
+  // INTENT LAYER 4: GENERAL COLLEGE QUESTIONS & ACRONYMS FAQ
+  // =============================================================
+  if (clean.includes('what is lt') || clean.includes('what is cr') || clean.includes('what is lab') || clean.includes('what does lt stand for') || clean.includes('what does cr mean')) {
+    return {
+      toolUsed: 'CampusFAQTool',
+      text: `🏛️ **Room Acronyms at GEHU**:\n\n` +
+            `• **CR:** Classroom (Standard lecture classrooms for regular theory batches).\n` +
+            `• **LT:** Lecture Theatre (Tiered, high-capacity halls for combined or large sections).\n` +
+            `• **LAB:** Laboratory (Equipped computer/practical labs for programming, hardware, or science practicals).\n` +
+            `• **AUDI:** Auditorium (Large hall for mass lectures, seminars, or cultural events).`
+    };
+  }
+
+  if (clean.includes('college time') || clean.includes('college timing') || clean.includes('opening time') || clean.includes('closing time') || clean.includes('working hours')) {
+    return {
+      toolUsed: 'CampusFAQTool',
+      text: `⏰ **GEHU Working Hours & Schedule**:\n\n` +
+            `• **College Timings:** 08:00 AM – 05:00 PM (Monday to Saturday).\n` +
+            `• **Lecture Duration:** Typically 50 to 55 minutes per lecture slot (Labs usually run for 1h 50m / 2 slots).\n` +
+            `• **Lunch & Break Intervals:** Staggered between 12:00 PM and 02:00 PM depending on your section routine.`
+    };
+  }
+
+  if (clean.includes('where to study') || clean.includes('quiet place') || clean.includes('self study') || clean.includes('empty room for study')) {
+    const freeRightNow = findFreeClassrooms(systemDay, currentTimeStr, minutesToTimeString(currentMinutes + 60), 'CR');
+    const topPicks = freeRightNow.slice(0, 4).join(', ');
+    return {
+      toolUsed: 'CampusFAQTool',
+      text: `📚 **Study Space Recommendation**:\n\n` +
+            `For quiet individual or group study, you can use any vacant classroom or the Central Library.\n\n` +
+            `💡 **Currently free classrooms right now (${currentTimeStr}):**\n${topPicks || 'Check the Find Vacant Rooms tab for all available rooms.'}\n\n` +
+            `*Remember to check if a class is scheduled before settling in!*`,
+      widget: freeRightNow.length > 0 ? {
+        type: 'free_rooms',
+        title: `Free Classrooms for Study (${currentTimeStr})`,
+        data: { rooms: freeRightNow }
+      } : undefined
+    };
+  }
+
+  // =============================================================
+  // ENTITY RESOLUTION PIPELINE (Day, Time, Room, Section, Subject)
+  // =============================================================
+
   // 1. Resolve Day
   let targetDay = systemDay;
   if (clean.includes("tomorrow")) {
@@ -261,15 +365,13 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     }
   }
 
-  // Helper time string
   const targetTimeStr = minutesToTimeString(targetTimeMinutes);
   const targetEndTimeStr = minutesToTimeString(targetTimeMinutes + 55);
 
-  // 3. Resolve Target Room if mentioned
+  // 3. Resolve Target Room
   let targetRoom: string | undefined = undefined;
   const allRooms = getAllClassrooms();
   
-  // Direct match room numbers like 124, 206, 009, 529, 302
   for (const r of allRooms) {
     const norm = normalizeRoom(r).toLowerCase();
     const raw = r.toLowerCase();
@@ -303,12 +405,10 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     floorFilter = parseInt(floorMatch[1], 10);
   }
 
-  // -------------------------------------------------------------
-  // AGENT TOOL EXECUTION ROUTING
-  // -------------------------------------------------------------
-
-  // ACTION A: "What class is going on in room X right now / at time Y?"
-  if (targetRoom && (clean.includes("which class") || clean.includes("what class") || clean.includes("who is in") || clean.includes("status of") || clean.includes("is occupied"))) {
+  // =============================================================
+  // ACTION A: "What class is in room X right now / who is in room X?"
+  // =============================================================
+  if (targetRoom && (clean.includes("which class") || clean.includes("what class") || clean.includes("who is in") || clean.includes("status of") || clean.includes("is occupied") || clean.includes("is anyone in") || clean.includes("going on in"))) {
     const schedules = getRoomSchedule(targetRoom, targetDay);
     const activeClass = schedules.find(s => {
       const start = timeToMinutes(s.startTime);
@@ -331,7 +431,6 @@ export function runAgenticAI(userQuery: string): AgentResponse {
         }
       };
     } else {
-      // Find next scheduled class
       const futureClasses = schedules.filter(s => timeToMinutes(s.startTime) > targetTimeMinutes);
       let nextClassNotice = "No more classes scheduled today!";
       if (futureClasses.length > 0) {
@@ -352,7 +451,9 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     }
   }
 
+  // =============================================================
   // ACTION B: Specific Room Schedule / Timetable query
+  // =============================================================
   if (targetRoom && (clean.includes("schedule") || clean.includes("classes") || clean.includes("timetable") || clean.includes("lectures") || clean.includes("routine"))) {
     const schedule = getRoomSchedule(targetRoom, targetDay);
     if (schedule.length === 0) {
@@ -379,8 +480,10 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     };
   }
 
+  // =============================================================
   // ACTION C: Specific Room Timeline / Vacancy periods query
-  if (targetRoom) {
+  // =============================================================
+  if (targetRoom && (clean.includes("timeline") || clean.includes("free slots") || clean.includes("availability") || clean.includes("periods") || clean.includes("when is it free") || clean.includes("is room free") || clean.includes("is it empty"))) {
     const periods = getRoomPeriods(targetRoom, targetDay);
     const freeSlots = periods.filter(p => p.status === 'FREE');
     const freeSlotsText = freeSlots.map(p => `• **${p.start} - ${p.end}** (Free)`).join('\n');
@@ -398,11 +501,13 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     };
   }
 
-  // ACTION D: Subject / Professor / Course lecture location query (e.g. "where is python class?", "cryptography lecture")
+  // =============================================================
+  // ACTION D: Subject Locator (Where is Python / Cryptography / OOPS?)
+  // =============================================================
   const allSubjects = Array.from(new Set(TIMETABLE.map(t => t.subject)));
   const matchedSubject = allSubjects.find(sub => clean.includes(sub.toLowerCase()) || clean.includes(sub.toLowerCase().replace(/[^a-z0-9]/g, "")));
   
-  if (matchedSubject && (clean.includes("where") || clean.includes("when") || clean.includes("which room") || clean.includes("timing") || clean.includes("subject"))) {
+  if (matchedSubject && (clean.includes("where") || clean.includes("when") || clean.includes("which room") || clean.includes("timing") || clean.includes("subject") || clean.includes("class of") || clean.includes("lecture of"))) {
     const matches = TIMETABLE.filter(t => t.subject.toLowerCase() === matchedSubject.toLowerCase() && t.day.toLowerCase() === targetDay.toLowerCase());
     
     if (matches.length > 0) {
@@ -422,9 +527,11 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     }
   }
 
-  // ACTION E: Section Timetable Query (e.g., "Section A schedule", "B.Tech CSE Sem 3 Sec B")
+  // =============================================================
+  // ACTION E: Section Timetable Query (e.g. "Section A routine", "Sec ML1")
+  // =============================================================
   const sectionMatch = clean.match(/sec(?:tion)?\s*([a-z0-9+-]+)/i) || clean.match(/\b([a-z0-9]{1,3})\s*section\b/i);
-  if (sectionMatch && (clean.includes("timetable") || clean.includes("schedule") || clean.includes("classes") || clean.includes("routine"))) {
+  if (sectionMatch && (clean.includes("timetable") || clean.includes("schedule") || clean.includes("classes") || clean.includes("routine") || clean.includes("routine for") || clean.includes("periods"))) {
     const secName = sectionMatch[1].toUpperCase();
     const sectionClasses = TIMETABLE.filter(t => t.section.toUpperCase() === secName && t.day.toLowerCase() === targetDay.toLowerCase())
       .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
@@ -446,62 +553,88 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     }
   }
 
+  // =============================================================
   // ACTION F: Campus Statistics / Overview
-  if (clean.includes("how many classrooms") || clean.includes("stats") || clean.includes("total rooms") || clean.includes("campus overview")) {
+  // =============================================================
+  if (clean.includes("how many classrooms") || clean.includes("stats") || clean.includes("statistics") || clean.includes("total rooms") || clean.includes("campus overview") || clean.includes("how many labs") || clean.includes("how many lts")) {
     const totalRooms = allRooms.length;
     const labs = allRooms.filter(r => r.toUpperCase().includes("LAB")).length;
     const lts = allRooms.filter(r => r.toUpperCase().includes("LT")).length;
-    const crs = totalRooms - labs - lts;
+    const audis = allRooms.filter(r => r.toUpperCase().includes("AUDI")).length;
+    const crs = totalRooms - labs - lts - audis;
     const freeRightNow = findFreeClassrooms(targetDay, currentTimeStr, minutesToTimeString(currentMinutes + 50));
 
     return {
       toolUsed: 'CampusAnalyticsTool',
-      text: `📊 **GEHU Classroom Finder Statistics**:\n\n` +
-            `• **Total Classrooms Tracked:** ${totalRooms}\n` +
+      text: `📊 **GEHU Campus Infrastructure & Analytics**:\n\n` +
+            `• **Total Rooms Tracked:** ${totalRooms}\n` +
             `• **Lecture Theatres (LT):** ${lts}\n` +
             `• **Laboratories (LAB):** ${labs}\n` +
+            `• **Auditoriums:** ${audis}\n` +
             `• **Classrooms (CR):** ${crs}\n` +
             `• **Currently Free Right Now (${targetDay} ${currentTimeStr}):** **${freeRightNow.length}** rooms available.\n\n` +
-            `💡 *Type 'Which rooms are free right now?' to view all of them.*`,
+            `💡 *Type 'Which rooms are free right now?' to see the full list of empty rooms.*`,
       widget: {
         type: 'free_rooms',
-        title: `Campus Live Vacancy`,
+        title: `Live Vacant Rooms (${currentTimeStr})`,
         data: { rooms: freeRightNow }
       }
     };
   }
 
-  // ACTION G: Default / General Free Rooms Finder Tool (Vacant Rooms)
-  const freeRooms = findFreeClassrooms(targetDay, targetTimeStr, targetEndTimeStr, roomTypeFilter, floorFilter);
-  const timeContextLabel = isExplicitTime ? `at **${targetTimeStr}**` : `right now at **${targetTimeStr}**`;
-  const typeLabel = roomTypeFilter === 'LAB' ? 'Laboratories (LAB)' : roomTypeFilter === 'LT' ? 'Lecture Theatres (LT)' : roomTypeFilter === 'CR' ? 'Classrooms (CR)' : 'Classrooms';
-  const floorLabel = floorFilter ? ` on the **${floorFilter}th Floor**` : '';
+  // =============================================================
+  // ACTION G: Vacant Rooms Query (ONLY triggered if explicitly looking for free rooms)
+  // =============================================================
+  const isLookingForFreeRooms = clean.includes("free") || clean.includes("vacant") || clean.includes("empty") || 
+                               clean.includes("available") || clean.includes("unoccupied") || clean.includes("find room") || 
+                               clean.includes("find a room") || clean.includes("where can i sit") || clean.includes("open class");
 
-  if (freeRooms.length === 0) {
+  if (isLookingForFreeRooms) {
+    const freeRooms = findFreeClassrooms(targetDay, targetTimeStr, targetEndTimeStr, roomTypeFilter, floorFilter);
+    const timeContextLabel = isExplicitTime ? `at **${targetTimeStr}**` : `right now at **${targetTimeStr}**`;
+    const typeLabel = roomTypeFilter === 'LAB' ? 'Laboratories (LAB)' : roomTypeFilter === 'LT' ? 'Lecture Theatres (LT)' : roomTypeFilter === 'AUDI' ? 'Auditoriums' : roomTypeFilter === 'CR' ? 'Classrooms (CR)' : 'Classrooms';
+    const floorLabel = floorFilter ? ` on the **${floorFilter}th Floor**` : '';
+
+    if (freeRooms.length === 0) {
+      return {
+        toolUsed: 'FindFreeRoomsTool',
+        text: `⚠️ **No vacant ${typeLabel.toLowerCase()}** found on **${targetDay}** ${timeContextLabel}${floorLabel}.\n\n` +
+              `All rooms in this category are currently occupied with lectures. Try searching for a different time window or room type.`,
+        widget: {
+          type: 'free_rooms',
+          title: `Vacant Rooms - ${targetDay} (${targetTimeStr})`,
+          data: { rooms: [], roomType: roomTypeFilter }
+        }
+      };
+    }
+
+    const previewList = freeRooms.slice(0, 10).map((r, i) => `${i + 1}. **${r}**`).join('\n');
+    const overflowNotice = freeRooms.length > 10 ? `\n...and **${freeRooms.length - 10} more** classrooms.` : '';
+
     return {
       toolUsed: 'FindFreeRoomsTool',
-      text: `⚠️ **No vacant ${typeLabel.toLowerCase()}** found on **${targetDay}** ${timeContextLabel}${floorLabel}.\n\n` +
-            `All rooms in this category are currently occupied with lectures. Try searching for a different time window or room type.`,
+      text: `🏫 Found **${freeRooms.length} vacant ${typeLabel.toLowerCase()}** on **${targetDay}** ${timeContextLabel}${floorLabel}:\n\n` +
+            `${previewList}${overflowNotice}\n\n` +
+            `✨ *All available rooms are mapped in the interactive cards below:*`,
       widget: {
         type: 'free_rooms',
         title: `Vacant Rooms - ${targetDay} (${targetTimeStr})`,
-        data: { rooms: [], roomType: roomTypeFilter }
+        data: { rooms: freeRooms, roomType: roomTypeFilter }
       }
     };
   }
 
-  const previewList = freeRooms.slice(0, 10).map((r, i) => `${i + 1}. **${r}**`).join('\n');
-  const overflowNotice = freeRooms.length > 10 ? `\n...and **${freeRooms.length - 10} more** classrooms.` : '';
-
+  // =============================================================
+  // FALLBACK INTENT: THOUGHTFUL AGENT ASSISTANCE
+  // =============================================================
   return {
-    toolUsed: 'FindFreeRoomsTool',
-    text: `🏫 Found **${freeRooms.length} vacant ${typeLabel.toLowerCase()}** on **${targetDay}** ${timeContextLabel}${floorLabel}:\n\n` +
-          `${previewList}${overflowNotice}\n\n` +
-          `✨ *All available rooms are mapped in the interactive cards below:*`,
-    widget: {
-      type: 'free_rooms',
-      title: `Vacant Rooms - ${targetDay} (${targetTimeStr})`,
-      data: { rooms: freeRooms, roomType: roomTypeFilter }
-    }
+    toolUsed: 'GeneralAssistanceTool',
+    text: `🤔 I understand your query: *"${userQuery}"*.\n\n` +
+          `I am specifically trained on the **GEHU Campus Timetable & Classroom Database**. Here are some helpful ways I can assist you:\n\n` +
+          `• 🔍 **Find Free Classrooms:** *"Are any rooms free right now?"* or *"Free labs at 2 PM"*\n` +
+          `• 🏫 **Check Room Status:** *"What class is in room 124 right now?"* or *"Schedule of room 206"*\n` +
+          `• 🎓 **Section Routines:** *"Show Section A timetable on Tuesday"*\n` +
+          `• 📖 **Find Subjects:** *"When is Python class?"* or *"Where is OOPS Lab?"*\n` +
+          `• 📊 **Campus Statistics:** *"How many total classrooms are there?"*`
   };
 }
