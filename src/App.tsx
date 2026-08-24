@@ -195,7 +195,7 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden relative selection:bg-indigo-500/30">
+    <div className="flex h-[100dvh] max-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden relative selection:bg-indigo-500/30">
       {/* Decorative Ambient Neon Background Glows */}
       <div className="absolute top-[-15%] left-[-10%] w-[60%] sm:w-[45%] h-[45%] bg-indigo-600/15 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-[-15%] right-[-10%] w-[60%] sm:w-[45%] h-[45%] bg-purple-600/15 rounded-full blur-[140px] pointer-events-none" />
@@ -330,7 +330,7 @@ export default function App() {
       {/* ========================================================================= */}
       {/* MAIN VIEWPORT CONTAINER */}
       {/* ========================================================================= */}
-      <main className="flex-1 flex flex-col min-w-0 bg-transparent z-10 h-full overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-transparent z-10 h-full overflow-hidden">
         
         {/* Top Navbar */}
         <header className="h-14 sm:h-16 border-b border-slate-800/40 flex items-center justify-between px-4 sm:px-8 bg-slate-900/40 backdrop-blur-xl shrink-0 z-20">
@@ -362,16 +362,16 @@ export default function App() {
         </header>
 
         {/* Dynamic Panels Content Wrapper */}
-        <div className={`flex-1 p-3 sm:p-6 md:p-8 flex flex-col pb-20 md:pb-8 ${activeTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <div className={`flex-1 min-h-0 p-2.5 sm:p-6 md:p-8 flex flex-col ${activeTab === 'chat' ? 'pb-20 md:pb-6 overflow-hidden' : 'pb-24 md:pb-8 overflow-y-auto'}`}>
           
           {/* ========================================================================= */}
           {/* TAB 1: AI Chat Assistant */}
           {/* ========================================================================= */}
           {activeTab === 'chat' && (
-            <div className="flex-1 max-w-4xl w-full mx-auto flex flex-col rounded-2xl sm:rounded-3xl border border-slate-800/50 bg-slate-900/40 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.4)] overflow-hidden">
+            <div className="flex-1 min-h-0 max-w-4xl w-full mx-auto flex flex-col rounded-2xl sm:rounded-3xl border border-slate-800/50 bg-slate-900/40 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.4)] overflow-hidden">
               
               {/* Chat Messages scroll area */}
-              <div ref={messageContainerRef} className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+              <div ref={messageContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
                 {messages.map((msg) => (
                   <div 
                     key={msg.id}
