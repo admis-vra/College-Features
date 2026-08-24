@@ -50,7 +50,13 @@ export default function App() {
   const classrooms = getAllClassrooms();
 
   // API settings states
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openrouter_model') || 'meta-llama/llama-3-8b-instruct:free');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openrouter_api_key') || '');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('openrouter_model') || 'meta-llama/llama-3.3-70b-instruct:free');
+
+  const handleSaveApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('openrouter_api_key', key);
+  };
 
   const handleSaveModel = (model: string) => {
     setSelectedModel(model);
@@ -216,7 +222,7 @@ export default function App() {
       contextData = 'General query. No specific classroom data requested.';
     }
 
-    const finalReply = await queryServerlessChat(userText, contextData, selectedModel);
+    const finalReply = await queryServerlessChat(userText, contextData, selectedModel, apiKey);
 
     setMessages(prev => prev.map(m => m.id === botMsgId ? { ...m, text: finalReply, widget } : m));
   };
@@ -304,6 +310,17 @@ export default function App() {
         {/* Footer info & Model configuration cards */}
         <div className="p-4 border-t border-slate-800/40 space-y-4">
           <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 block px-1">OpenRouter Key (Local Override)</label>
+            <input 
+              type="password" 
+              value={apiKey} 
+              onChange={(e) => handleSaveApiKey(e.target.value)} 
+              placeholder="Paste Key to Test Locally..." 
+              className="w-full bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200 placeholder-slate-700 transition shadow-inner font-medium"
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 block px-1">AI Agent Model</label>
             <div className="relative">
               <select 
@@ -311,10 +328,10 @@ export default function App() {
                 onChange={(e) => handleSaveModel(e.target.value)} 
                 className="w-full bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200 transition shadow-inner appearance-none pr-8 cursor-pointer font-medium"
               >
-                <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
+                <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (Free)</option>
                 <option value="google/gemma-2-9b-it:free">Gemma 2 9B (Free)</option>
                 <option value="qwen/qwen-2.5-72b-instruct:free">Qwen 2.5 72B (Free)</option>
-                <option value="nvidia/nemotron-4-340b-instruct">Nvidia Nemotron 4 (Free)</option>
+                <option value="meta-llama/llama-3.1-8b-instruct:free">Llama 3.1 8B (Free)</option>
               </select>
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-500">
                 <ChevronRight className="w-4 h-4 rotate-90" />

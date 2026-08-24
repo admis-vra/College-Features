@@ -336,7 +336,53 @@ export function parseNaturalLanguageQuery(text: string, currentDayOverride?: str
   };
 }
 
-export async function queryServerlessChat(userMessage: string, contextData: string, model: string): Promise<string> {
+export async function queryServerlessChat(userMessage: string, contextData: string, model: string, localApiKey?: string): Promise<string> {
+  // If a local API Key is provided, call OpenRouter directly from the browser (bypasses serverless proxy)
+  if (localApiKey) {
+    const systemPrompt = `You are an intelligent, helpful university AI agent. 
+Your goal is to help the user with questions regarding classroom availability, timetables, and general campus room information.
+
+To help you answer accurately, here is the relevant schedule context retrieved from the local database:
+${contextData}
+
+Instructions:
+1. Always base your vacancy and schedule answers strictly on the context provided above.
+2. Be friendly, conversational, and direct.
+3. If the context does not contain enough info or the user asks a general question, answer to the best of your general knowledge but mention the limitations.`;
+
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${localApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://github.com/vanshnegi1584-glitch/CLASSROOM-FINDER",
+          "X-Title": "Classroom Finder AI Agent"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content;
+      } else {
+        if (data.error && data.error.message) {
+          return `⚠️ API Error: ${data.error.message}`;
+        }
+        return "⚠️ Unable to get a response from OpenRouter. Please check your API Key.";
+      }
+    } catch (error: any) {
+      return `⚠️ Network Error: ${error.message || error}`;
+    }
+  }
+
+  // Otherwise, route through the serverless function (for production deployment)
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
