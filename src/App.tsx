@@ -9,39 +9,34 @@ import {
   CheckCircle, 
   XCircle, 
   BookOpen, 
-  SlidersHorizontal,
-  Compass,
-  MessageSquare,
-  Sparkles,
-  HelpCircle,
-  ChevronRight
+  SlidersHorizontal, 
+  Compass, 
+  MessageSquare, 
+  Sparkles, 
+  HelpCircle, 
+  ChevronRight,
+  Zap
 } from 'lucide-react';
 import { 
   getAllClassrooms, 
   findFreeClassrooms, 
   getRoomPeriods, 
   getRoomSchedule, 
-  parseNaturalLanguageQuery,
-  queryServerlessChat,
-  minutesToTimeString,
+  runAgenticAI,
   timeToMinutes,
-  FreePeriod,
-  ClassSchedule
-} from './utils/timetableEngine';
+  FreePeriod, 
+  ClassSchedule,
+  AgentResponse,
+  WEEKDAYS
+} from './agent/agentEngine';
 
 interface Message {
   id: string;
   sender: 'user' | 'bot';
   text: string;
   timestamp: Date;
-  widget?: {
-    type: 'free_rooms' | 'room_periods' | 'room_schedule';
-    data: any;
-    title: string;
-  };
+  widget?: AgentResponse['widget'];
 }
-
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'chat' | 'find' | 'timeline' | 'schedule'>('chat');
@@ -49,24 +44,17 @@ export default function App() {
   // Timetable lists
   const classrooms = getAllClassrooms();
 
-  // API settings states
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openrouter_api_key') || '');
-
-  const handleSaveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('openrouter_api_key', key);
-  };
-
   // Chat States
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'bot',
-      text: "👋 Welcome to your next-generation ClassFinder AI Agent.\n\nAsk me anything in natural language about vacant rooms, class schedules, or daily timelines. For example:\n\n• \"Are there any rooms free right now?\"\n• \"Which labs are free on Monday at 10 AM?\"\n• \"Show me the schedule of room 124 tomorrow.\"",
+      text: "👋 Hi! I'm your GEHU Autonomous Classroom Agent.\n\nI run 100% in-browser with zero API keys or rate limits. You can ask me anything about classrooms, vacancies, or section routines:\n\n• \"Are there any labs free right now?\"\n• \"What class is going on in room 124 right now?\"\n• \"Show me Section A's timetable on Monday.\"\n• \"Which rooms are free tomorrow at 10 AM?\"\n• \"Give me campus stats and total rooms.\"",
       timestamp: new Date()
     }
   ]);
   const [inputVal, setInputVal] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
   // Manual Tab states
@@ -89,12 +77,12 @@ export default function App() {
   const [roomPeriods, setRoomPeriods] = useState<FreePeriod[]>([]);
   const [roomSchedule, setRoomSchedule] = useState<ClassSchedule[]>([]);
 
-  // Auto-scroll chat
+  // Auto-scroll chat smoothly inside container
   useEffect(() => {
     if (messageContainerRef.current) {
       messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isTyping]);
 
   // Set initial timeline views
   useEffect(() => {
@@ -103,11 +91,10 @@ export default function App() {
     }
   }, [selectedRoom, timelineDate]);
 
-  // Get current weekday from YYYY-MM-DD
   const getWeekday = (dateStr: string) => {
     if (!dateStr) return 'Monday';
     const date = new Date(dateStr);
-    const day = date.getDay(); // 0 is Sunday, 1 is Monday, etc.
+    const day = date.getDay();
     return WEEKDAYS[day === 0 ? 6 : day - 1];
   };
 
@@ -157,7 +144,7 @@ export default function App() {
     setSearchedFind(true);
   };
 
-  const handleChatSubmit = async (e: React.FormEvent) => {
+  const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputVal.trim()) return;
 
@@ -172,53 +159,22 @@ export default function App() {
       timestamp: new Date()
     }]);
 
-    const botMsgId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, {
-      id: botMsgId,
-      sender: 'bot',
-      text: '🤖 Processing context and consulting agent...',
-      timestamp: new Date()
-    }]);
+    setIsTyping(true);
 
-    const parseResult = parseNaturalLanguageQuery(userText);
-    let contextData = '';
-    let widget: Message['widget'] = undefined;
+    // Fast autonomous agent execution
+    setTimeout(() => {
+      const agentResult = runAgenticAI(userText);
+      const botMsgId = (Date.now() + 1).toString();
 
-    if (parseResult.queryType === 'FREE_ROOMS') {
-      const rooms = findFreeClassrooms(parseResult.day, parseResult.timeStr, minutesToTimeString(timeToMinutes(parseResult.timeStr) + 50), parseResult.roomType);
-      contextData = `List of vacant rooms on ${parseResult.day} at ${parseResult.timeStr} (assuming a 50-minute slot): ${rooms.join(', ') || 'No empty rooms'}.`;
-      widget = {
-        type: 'free_rooms',
-        title: `Vacant Rooms - ${parseResult.day} (${parseResult.timeStr})`,
-        data: { rooms, roomType: parseResult.roomType }
-      };
-    } 
-    else if (parseResult.queryType === 'ROOM_PERIODS' && parseResult.targetRoom) {
-      const periods = getRoomPeriods(parseResult.targetRoom, parseResult.day);
-      contextData = `Timeline for Room ${parseResult.targetRoom} on ${parseResult.day}: \n` + 
-        periods.map(p => `- ${p.start} - ${p.end}: ${p.status} ${p.subject ? `(${p.subject} for ${p.course})` : ''}`).join('\n');
-      widget = {
-        type: 'room_periods',
-        title: `${parseResult.targetRoom} Periods - ${parseResult.day}`,
-        data: { periods, room: parseResult.targetRoom }
-      };
-    }
-    else if (parseResult.queryType === 'ROOM_SCHEDULE' && parseResult.targetRoom) {
-      const schedule = getRoomSchedule(parseResult.targetRoom, parseResult.day);
-      contextData = `Scheduled classes for Room ${parseResult.targetRoom} on ${parseResult.day}: \n` + 
-        schedule.map(s => `- ${s.startTime} - ${s.endTime}: ${s.subject} (${s.course}, Sec ${s.section})`).join('\n');
-      widget = {
-        type: 'room_schedule',
-        title: `${parseResult.targetRoom} Schedule - ${parseResult.day}`,
-        data: { schedule, room: parseResult.targetRoom }
-      };
-    } else {
-      contextData = 'General query. No specific classroom data requested.';
-    }
-
-    const finalReply = await queryServerlessChat(userText, contextData, apiKey);
-
-    setMessages(prev => prev.map(m => m.id === botMsgId ? { ...m, text: finalReply, widget } : m));
+      setIsTyping(false);
+      setMessages(prev => [...prev, {
+        id: botMsgId,
+        sender: 'bot',
+        text: agentResult.text,
+        timestamp: new Date(),
+        widget: agentResult.widget
+      }]);
+    }, 150);
   };
 
   const handleSuggestionClick = (query: string) => {
@@ -243,13 +199,15 @@ export default function App() {
               <Compass className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-extrabold text-lg leading-tight tracking-wide bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">ClassFinder</h1>
-              <span className="text-[10px] text-indigo-400 font-black tracking-widest uppercase">AI Dashboard</span>
+              <h1 className="font-extrabold text-lg leading-tight tracking-wide bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">GEHU ClassFinder</h1>
+              <span className="text-[10px] text-indigo-400 font-black tracking-widest uppercase flex items-center gap-1">
+                <Zap className="w-3 h-3 fill-indigo-400 text-indigo-400" /> Agentic AI Engine
+              </span>
             </div>
           </div>
 
           {/* Navigation Links */}
-          <nav className="p-4 space-y-1">
+          <nav className="p-4 space-y-1.5">
             <button 
               onClick={() => setActiveTab('chat')}
               className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl transition-all duration-300 border ${
@@ -259,7 +217,7 @@ export default function App() {
               }`}
             >
               <MessageSquare className="w-5 h-5 shrink-0" />
-              <span>AI Chat Agent</span>
+              <span>AI Agent Assistant</span>
               <span className="ml-auto text-[9px] bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow">Active</span>
             </button>
 
@@ -301,28 +259,15 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Footer info & Model configuration cards */}
-        <div className="p-4 border-t border-slate-800/40 space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 block px-1">OpenRouter Key (Local Override)</label>
-            <input 
-              type="password" 
-              value={apiKey} 
-              onChange={(e) => handleSaveApiKey(e.target.value)} 
-              placeholder="Paste Key to Test Locally..." 
-              className="w-full bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200 placeholder-slate-700 transition shadow-inner font-medium"
-            />
-          </div>
-
-
-
-          <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/30 shadow-[0_8px_32px_0_rgba(0,0,0,0.2)]">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
-              <span className="text-xs font-bold text-slate-300">Offline Database</span>
+        {/* Footer info card */}
+        <div className="p-4 border-t border-slate-800/40 space-y-3">
+          <div className="bg-slate-950/40 rounded-2xl p-4 border border-slate-800/30 shadow-[0_8px_32px_0_rgba(0,0,0,0.2)]">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span className="text-xs font-bold text-slate-200">100% Free & Autonomous</span>
             </div>
-            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-              Timetable loaded locally. Queries process instantly in your browser with zero data usage.
+            <p className="text-[11px] text-slate-400 leading-relaxed font-medium">
+              Zero external API keys required. All entity resolution, intent mapping, and schedule analysis run on-device.
             </p>
           </div>
         </div>
@@ -331,7 +276,7 @@ export default function App() {
       {/* Main Panel Content Area */}
       <main className="flex-1 flex flex-col min-w-0 bg-transparent z-10">
         {/* Top Navbar */}
-        <header className="h-16 border-b border-slate-800/40 flex items-center justify-between px-8 bg-slate-900/20 backdrop-blur-md">
+        <header className="h-16 border-b border-slate-800/40 flex items-center justify-between px-8 bg-slate-900/20 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-2 text-xs">
             <span className="text-slate-500 font-semibold uppercase tracking-wider">Dashboard</span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-700" />
@@ -341,7 +286,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="px-3.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black tracking-wider uppercase rounded-full flex items-center gap-1.5 shadow-sm">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-              Live Serverless API
+              Agent Active
             </div>
           </div>
         </header>
@@ -361,11 +306,11 @@ export default function App() {
                   >
                     {msg.sender === 'bot' && (
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20 border border-indigo-400/25">
-                        <Bot className="w-5 h-5 text-white animate-pulse" />
+                        <Bot className="w-5 h-5 text-white" />
                       </div>
                     )}
                     
-                    <div className="space-y-3 max-w-[80%]">
+                    <div className="space-y-3 max-w-[85%]">
                       <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
                         msg.sender === 'user' 
                           ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-none shadow-lg shadow-indigo-500/10 border border-indigo-500/20 font-medium' 
@@ -386,15 +331,16 @@ export default function App() {
                           {msg.widget.type === 'free_rooms' && (
                             <div>
                               {msg.widget.data.rooms.length > 0 ? (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
                                   {msg.widget.data.rooms.map((room: string, i: number) => {
-                                    const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : 'CR';
+                                    const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : room.toUpperCase().includes('AUDI') ? 'AUDI' : 'CR';
                                     return (
-                                      <div key={i} className="bg-slate-900/60 border border-slate-800/60 px-3.5 py-3 rounded-xl flex items-center justify-between hover:scale-[1.03] hover:border-slate-700/50 hover:bg-slate-900 transition-all duration-300 shadow-sm">
+                                      <div key={i} className="bg-slate-900/60 border border-slate-800/60 px-3.5 py-3 rounded-xl flex items-center justify-between hover:scale-[1.02] hover:border-slate-700/50 hover:bg-slate-900 transition-all duration-200 shadow-sm">
                                         <span className="font-bold text-slate-200 text-xs">{room}</span>
                                         <span className={`text-[9px] px-2 py-0.5 rounded font-black tracking-wide ${
                                           type === 'LAB' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/25' : 
                                           type === 'LT' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25' : 
+                                          type === 'AUDI' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25' :
                                           'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
                                         }`}>{type}</span>
                                       </div>
@@ -411,7 +357,7 @@ export default function App() {
 
                           {/* Room Periods Widget */}
                           {msg.widget.type === 'room_periods' && (
-                            <div className="space-y-2">
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                               {msg.widget.data.periods.map((p: FreePeriod, i: number) => (
                                 <div key={i} className={`flex items-center justify-between px-4 py-3.5 rounded-xl text-xs transition-all border ${
                                   p.status === 'FREE' 
@@ -430,9 +376,9 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Room Schedule Widget */}
-                          {msg.widget.type === 'room_schedule' && (
-                            <div className="space-y-2.5">
+                          {/* Room Schedule & Section Schedule Widget */}
+                          {(msg.widget.type === 'room_schedule' || msg.widget.type === 'section_schedule') && (
+                            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                               {msg.widget.data.schedule.length > 0 ? (
                                 msg.widget.data.schedule.map((s: ClassSchedule, i: number) => (
                                   <div key={i} className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-xl text-xs space-y-1.5">
@@ -440,14 +386,29 @@ export default function App() {
                                       <span>{s.startTime} - {s.endTime}</span>
                                       <span className="text-indigo-400 font-bold">{s.course}</span>
                                     </div>
-                                    <div className="text-slate-400 text-[11px] font-semibold">{s.subject} (Sec: {s.section}, Sem: {s.semester})</div>
+                                    <div className="text-slate-400 text-[11px] font-semibold">{s.subject} {s.section ? `(Sec: ${s.section}, Sem: ${s.semester})` : ''}</div>
                                   </div>
                                 ))
                               ) : (
                                 <p className="text-xs text-emerald-400 font-semibold flex items-center gap-2">
-                                  <CheckCircle className="w-4 h-4" /> No classes scheduled for this classroom.
+                                  <CheckCircle className="w-4 h-4" /> No classes scheduled.
                                 </p>
                               )}
+                            </div>
+                          )}
+
+                          {/* Current Status Card Widget */}
+                          {msg.widget.type === 'current_status' && (
+                            <div className="bg-slate-900/80 border border-indigo-500/30 p-4 rounded-xl space-y-2 shadow-lg">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-300">Active Session</span>
+                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">In Progress</span>
+                              </div>
+                              <div className="font-extrabold text-sm text-slate-100">{msg.widget.data.subject}</div>
+                              <div className="text-xs text-indigo-400 font-semibold">{msg.widget.data.course} • Section {msg.widget.data.section} (Sem {msg.widget.data.semester})</div>
+                              <div className="text-[11px] text-slate-400 font-medium pt-1 border-t border-slate-800">
+                                Lecture Window: <strong>{msg.widget.data.startTime} - {msg.widget.data.endTime}</strong>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -455,29 +416,42 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+
+                {isTyping && (
+                  <div className="flex gap-4 items-center text-slate-400 text-xs italic pl-2">
+                    <Bot className="w-4 h-4 text-indigo-400 animate-spin" />
+                    <span>Agent analyzing timetable graph...</span>
+                  </div>
+                )}
               </div>
 
               {/* Chat Input */}
-              <div className="p-4 border-t border-slate-800/40 bg-slate-900/60 backdrop-blur-md">
+              <div className="p-4 border-t border-slate-800/40 bg-slate-900/60 backdrop-blur-md shrink-0">
                 {/* Suggestions panel */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   <button 
-                    onClick={() => handleSuggestionClick("Is any class empty right now?")}
-                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-2 rounded-xl transition duration-200"
+                    onClick={() => handleSuggestionClick("Are there any labs free right now?")}
+                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
                   >
-                    ⚡ Free right now?
+                    🧪 Labs free right now?
                   </button>
                   <button 
-                    onClick={() => handleSuggestionClick("Which labs are free on Monday at 10 AM?")}
-                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-2 rounded-xl transition duration-200"
+                    onClick={() => handleSuggestionClick("What class is going on in room 124 right now?")}
+                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
                   >
-                    🧪 Monday labs?
+                    🏫 What class in 124 right now?
                   </button>
                   <button 
-                    onClick={() => handleSuggestionClick(`Is room ${classrooms[0] || '124'} free tomorrow?`)}
-                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-2 rounded-xl transition duration-200"
+                    onClick={() => handleSuggestionClick("Show me Section A's timetable on Monday")}
+                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
                   >
-                    🏫 Room details tomorrow?
+                    🎓 Section A Routine
+                  </button>
+                  <button 
+                    onClick={() => handleSuggestionClick("Campus stats and total rooms")}
+                    className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
+                  >
+                    📊 Campus Stats
                   </button>
                 </div>
 
@@ -486,7 +460,7 @@ export default function App() {
                     type="text"
                     value={inputVal}
                     onChange={(e) => setInputVal(e.target.value)}
-                    placeholder="Type to chat with AI Room Agent..."
+                    placeholder="Ask any question about rooms, classes, or sections..."
                     className="flex-1 bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 text-slate-200 placeholder-slate-650 transition shadow-inner font-medium"
                   />
                   <button 
@@ -609,7 +583,7 @@ export default function App() {
                   {findResults.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
                       {findResults.map((room, i) => {
-                        const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : 'CR';
+                        const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : room.toUpperCase().includes('AUDI') ? 'AUDI' : 'CR';
                         return (
                           <div key={i} className="bg-slate-950/60 border border-slate-800/50 hover:border-indigo-500/30 p-4 rounded-2xl hover:scale-[1.03] transition-all duration-300 flex items-center justify-between shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
                             <div className="flex items-center gap-3">
@@ -621,8 +595,9 @@ export default function App() {
                             <span className={`text-[9px] px-2 py-0.5 rounded font-black tracking-widest ${
                               type === 'LAB' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/25' : 
                               type === 'LT' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25' : 
+                              type === 'AUDI' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25' :
                               'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-                            }`}>{type === 'LAB' ? 'LAB' : type === 'LT' ? 'L. Theatre' : 'Classroom'}</span>
+                            }`}>{type === 'LAB' ? 'LAB' : type === 'LT' ? 'L. Theatre' : type === 'AUDI' ? 'Audi' : 'Classroom'}</span>
                           </div>
                         );
                       })}
@@ -681,9 +656,9 @@ export default function App() {
                 <div className="space-y-4">
                   <div className="h-12 w-full bg-slate-950/80 rounded-2xl overflow-hidden flex border border-slate-850 shadow-inner p-1">
                     {roomPeriods.map((p, i) => {
-                      const startMin = timeToMinutes(p.start);
-                      const endMin = timeToMinutes(p.end);
-                      const widthPercent = ((endMin - startMin) / (17 * 60 - 8 * 60)) * 100;
+                      const startMin = (timeToMinutes(p.start) || 8*60);
+                      const endMin = (timeToMinutes(p.end) || 17*60);
+                      const widthPercent = Math.max(5, ((endMin - startMin) / (17 * 60 - 8 * 60)) * 100);
                       
                       return (
                         <div 
