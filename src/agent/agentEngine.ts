@@ -140,7 +140,14 @@ export function findFreeClassrooms(day: string, startTimeStr: string, endTimeStr
     if (!occupiedRooms.has(normRoom)) {
       const rawUpper = rawRoom.toUpperCase();
       if (roomType) {
-        if (roomType === 'CR' && !rawUpper.includes('CR') && !rawUpper.includes('CLASS')) return;
+        if (roomType === 'CR') {
+          if (rawUpper.includes('LAB') || rawUpper.includes('WORKSHOP') || rawUpper.includes('LT') || rawUpper.includes('THEATRE') || rawUpper.includes('AUDI')) {
+            return;
+          }
+          if (!rawUpper.includes('CR') && !rawUpper.includes('CLASS') && !rawUpper.startsWith('RR')) {
+            return;
+          }
+        }
         if (roomType === 'LT' && !rawUpper.includes('LT') && !rawUpper.includes('LECTURE')) return;
         if (roomType === 'LAB' && !rawUpper.includes('LAB') && !rawUpper.includes('WORKSHOP')) return;
         if (roomType === 'AUDI' && !rawUpper.includes('AUDI')) return;
@@ -386,15 +393,15 @@ export function runAgenticAI(userQuery: string): AgentResponse {
     }
   }
 
-  // 4. Resolve Room Types
-  let roomTypeFilter: 'CR' | 'LT' | 'LAB' | 'AUDI' | undefined = undefined;
+  // 4. Resolve Room Types (Defaults to 'CR' classrooms only unless lab/lt/audi is explicitly specified)
+  let roomTypeFilter: 'CR' | 'LT' | 'LAB' | 'AUDI' = 'CR';
   if (clean.includes("lab") || clean.includes("labs") || clean.includes("practical") || clean.includes("workshop")) {
     roomTypeFilter = 'LAB';
   } else if (clean.includes("lecture") || clean.includes("lt") || clean.includes("lts") || clean.includes("theatre")) {
     roomTypeFilter = 'LT';
   } else if (clean.includes("audi") || clean.includes("auditorium")) {
     roomTypeFilter = 'AUDI';
-  } else if (clean.includes("classroom") || clean.includes("cr") || clean.includes("crs")) {
+  } else {
     roomTypeFilter = 'CR';
   }
 

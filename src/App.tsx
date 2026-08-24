@@ -49,7 +49,7 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'bot',
-      text: "👋 Hi! I'm your GEHU Autonomous Classroom Agent.\n\nI run 100% in-browser with zero API keys or rate limits. You can ask me anything about classrooms, vacancies, or section routines:\n\n• \"Are there any labs free right now?\"\n• \"What class is going on in room 124 right now?\"\n• \"Show me Section A's timetable on Monday.\"\n• \"Which rooms are free tomorrow at 10 AM?\"\n• \"Give me campus stats and total rooms.\"",
+      text: "👋 Hi! I'm your GEHU Autonomous Classroom Agent.\n\nI run 100% in-browser with zero API keys or rate limits. You can ask me anything about classrooms, vacancies, or section routines:\n\n• \"Which classrooms (CR) are free right now?\"\n• \"What class is going on in room 124 right now?\"\n• \"Show me Section A's timetable on Monday.\"\n• \"Which CR rooms are free tomorrow at 10 AM?\"\n• \"Give me campus stats and total rooms.\"",
       timestamp: new Date()
     }
   ]);
@@ -430,16 +430,16 @@ export default function App() {
                 {/* Suggestions panel */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   <button 
-                    onClick={() => handleSuggestionClick("Are there any labs free right now?")}
+                    onClick={() => handleSuggestionClick("Which classrooms are free right now?")}
                     className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
                   >
-                    🧪 Labs free right now?
+                    🏫 Free Classrooms right now?
                   </button>
                   <button 
                     onClick={() => handleSuggestionClick("What class is going on in room 124 right now?")}
                     className="text-xs font-semibold bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/80 px-3.5 py-1.5 rounded-xl transition duration-200"
                   >
-                    🏫 What class in 124 right now?
+                    🔍 What class in 124 right now?
                   </button>
                   <button 
                     onClick={() => handleSuggestionClick("Show me Section A's timetable on Monday")}
