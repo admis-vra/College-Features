@@ -24,11 +24,22 @@ export interface StorageQuotaInfo {
   usagePercent: number;
 }
 
+export interface DailyAttendanceRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  workingDayNumber: number | null;
+  subjectId: string;
+  subjectName: string;
+  status: 'PRESENT' | 'ABSENT' | 'CANCELLED';
+  timestamp: string;
+}
+
 // In-Memory Fast Cache for 0ms Synchronous Access
 class DatabaseMemoryCache {
   private attendance: AttendanceSubject[] = [];
   private academicCalendar: AcademicCalendarEvent[] = [];
   private scans: StoredScanItem[] = [];
+  private dailyLogs: DailyAttendanceRecord[] = [];
 
   constructor() {
     this.initSyncFromStorage();
@@ -81,9 +92,35 @@ class DatabaseMemoryCache {
       if (dbScans && Array.isArray(dbScans)) {
         this.scans = dbScans;
       }
+
+      const dbLogs = await get<DailyAttendanceRecord[]>('daily_attendance_logs', customDBStore);
+      if (dbLogs && Array.isArray(dbLogs)) {
+        this.dailyLogs = dbLogs;
+      }
     } catch (err) {
       console.warn('IndexedDB hydration notice (using cache fallback):', err);
     }
+  }
+
+  // =========================================================
+  // DAILY ATTENDANCE LOG METHODS (TRUE CURRENT ATTENDANCE)
+  // =========================================================
+  public getDailyLogs(): DailyAttendanceRecord[] {
+    return this.dailyLogs;
+  }
+
+  public async saveDailyLogs(logs: DailyAttendanceRecord[]): Promise<void> {
+    this.dailyLogs = logs;
+    try {
+      await set('daily_attendance_logs', logs, customDBStore);
+    } catch (err) {
+      console.error('Error writing daily attendance logs to IndexedDB:', err);
+    }
+  }
+
+  public async addDailyLog(record: DailyAttendanceRecord): Promise<void> {
+    this.dailyLogs = [record, ...this.dailyLogs.filter(l => !(l.date === record.date && l.subjectId === record.subjectId))];
+    await this.saveDailyLogs(this.dailyLogs);
   }
 
   // =========================================================

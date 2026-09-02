@@ -35,7 +35,8 @@ import {
   calculateOverallAttendance, 
   findMatchingSubject,
   saveStudentSubjects,
-  calculateSemesterAttendanceProjection
+  calculateSemesterAttendanceProjection,
+  getDailyCheckInStatus
 } from '../engines/attendanceEngine';
 
 import {
@@ -70,7 +71,8 @@ export interface AgentResponse {
       | 'daily_planner'
       | 'working_days_stats'
       | 'holidays_list'
-      | 'semester_attendance_forecast';
+      | 'semester_attendance_forecast'
+      | 'daily_attendance_checkin';
     title: string;
     data: any;
   };
@@ -493,6 +495,52 @@ export async function runAgenticAI(
             (dayInfo.isWorkingDay ? `🏫 **Tomorrow is an active instructional working day (Day ${dayInfo.workingDayNumber} of 90).** Regular classes and lab sessions will be conducted.\n` : '') +
             (!dayInfo.isWorkingDay && !dayInfo.isHoliday ? `🏖️ **Tomorrow is ${dayInfo.label}.** Regular teaching is not scheduled.\n` : '') +
             `\n💡 *Verified against official GEHU Academic Calendar.*`
+    };
+  }
+
+  // =============================================================
+  // ACTION 0.8: DAILY CLASS ATTENDANCE CHECK-IN
+  // =============================================================
+  if (
+    clean.includes("check in") || 
+    clean.includes("check-in") || 
+    clean.includes("did i attend") || 
+    clean.includes("mark attendance") || 
+    clean.includes("daily attendance") ||
+    clean.includes("today attendance") ||
+    (clean.includes("attendance") && (clean.includes("today") || clean.includes("log") || clean.includes("record") || clean.includes("update")))
+  ) {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+    const checkInStatus = getDailyCheckInStatus(dateStr);
+
+    let summaryText = `📋 **Daily Class Attendance Check-In (${checkInStatus.dayName}, ${dateStr})**:\n\n` +
+                      `• **Academic Calendar Status:** **${checkInStatus.isWorkingDay ? `Instructional Day ${checkInStatus.workingDayNumber} of 90` : checkInStatus.isHoliday ? `Holiday: ${checkInStatus.holidayName}` : 'Non-Instructional Day'}**\n\n`;
+
+    if (checkInStatus.isHoliday) {
+      summaryText += `🎉 **Today is an official university holiday!** Classes are suspended, so no attendance check-in is needed.`;
+    } else if (!checkInStatus.isWorkingDay) {
+      summaryText += `🏖️ **Today is a non-instructional day.** No lectures are scheduled.`;
+    } else {
+      summaryText += `**Your Enrolled Subjects Today:**\n`;
+      checkInStatus.subjects.forEach(s => {
+        const icon = s.status === 'PRESENT' ? '✅ Attended' : s.status === 'ABSENT' ? '❌ Absent / Skipped' : s.status === 'CANCELLED' ? '⏸️ Cancelled' : '⏳ Pending';
+        summaryText += `• **${s.subject.name}**: ${icon} (${s.subject.attended}/${s.subject.total} = ${((s.subject.attended / (s.subject.total || 1)) * 100).toFixed(1)}%)\n`;
+      });
+      summaryText += `\n💡 *You can mark or change your daily check-in in the **Attendance Lab** with 1 click to keep your true record updated!*`;
+    }
+
+    return {
+      toolUsed: 'DailyCheckInTool',
+      text: summaryText,
+      widget: {
+        type: 'daily_attendance_checkin',
+        title: `Daily Check-In (${checkInStatus.dayName})`,
+        data: checkInStatus
+      }
     };
   }
 

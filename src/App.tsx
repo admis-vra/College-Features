@@ -35,7 +35,10 @@ import {
   calculateSubjectMetrics,
   calculateOverallAttendance,
   AttendanceSubject,
-  SubjectAttendanceMetrics
+  SubjectAttendanceMetrics,
+  getDailyCheckInStatus,
+  recordDailyClassAttendance,
+  undoDailyClassAttendance
 } from './engines/attendanceEngine';
 import {
   getDaysUntilNextExam
@@ -80,6 +83,27 @@ export default function App() {
   const updateSubjectsList = (newList: AttendanceSubject[]) => {
     setStudentSubjects(newList);
     saveStudentSubjects(newList);
+  };
+
+  // Daily Class Attendance Check-In (Calendar Working Days)
+  const [checkInDate, setCheckInDate] = useState<string>(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
+
+  const dailyCheckIn = getDailyCheckInStatus(checkInDate);
+
+  const handleMarkDailyAttendance = (subjectId: string, status: 'PRESENT' | 'ABSENT' | 'CANCELLED') => {
+    recordDailyClassAttendance(checkInDate, subjectId, status);
+    setStudentSubjects(loadStudentSubjects());
+  };
+
+  const handleUndoDailyAttendance = (subjectId: string) => {
+    undoDailyClassAttendance(checkInDate, subjectId);
+    setStudentSubjects(loadStudentSubjects());
   };
 
   // Chat States
@@ -746,6 +770,46 @@ export default function App() {
                             </button>
                           </div>
                         )}
+
+                        {/* Widget: Daily Attendance Check-In in Chat */}
+                        {msg.widget.type === 'daily_attendance_checkin' && (
+                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-indigo-500/40 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                {msg.widget.title}
+                              </span>
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                                {msg.widget.data.dayName}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                              {msg.widget.data.subjects.map((subItem: any, idx: number) => (
+                                <div key={idx} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+                                  <div className="font-semibold text-white truncate max-w-[180px]">{subItem.subject.name}</div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-slate-400">{subItem.subject.attended}/{subItem.subject.total}</span>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      subItem.status === 'PRESENT' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                      subItem.status === 'ABSENT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                                      subItem.status === 'CANCELLED' ? 'bg-slate-800 text-slate-300' : 'bg-amber-500/20 text-amber-300'
+                                    }`}>
+                                      {subItem.status === 'PRESENT' ? '✅ Attended' : subItem.status === 'ABSENT' ? '❌ Absent' : subItem.status === 'CANCELLED' ? '⏸️ Off' : '⏳ Pending'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <button
+                              onClick={() => setActiveTab('attendance')}
+                              className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/30"
+                            >
+                              Open Check-In Form in Attendance Lab →
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -763,11 +827,11 @@ export default function App() {
             {/* Quick Prompt Suggestions */}
             <div className="px-4 sm:px-6 py-2.5 bg-slate-950/50 border-t border-slate-800/60 overflow-x-auto flex gap-2">
               {[
+                "Did I attend classes today?",
+                "How many working days left?",
+                "Can I reach 75% in C++?",
+                "Is tomorrow a holiday?",
                 "Is any classroom empty right now?",
-                "What is my overall attendance?",
-                "Can I skip tomorrow's class?",
-                "When is my next exam?",
-                "Which subject has my lowest attendance?",
                 "Plan my day"
               ].map((sugg, i) => (
                 <button
@@ -898,6 +962,137 @@ export default function App() {
                   Add Subject
                 </button>
               </div>
+            </div>
+
+            {/* Daily Class Attendance Check-In Card (Linked to Academic Calendar) */}
+            <div className="bg-slate-900/90 border border-indigo-500/40 rounded-3xl p-6 backdrop-blur-xl shadow-xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white tracking-tight">Daily Class Attendance Check-In</h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        Live Sync
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Linked to Academic Calendar: {dailyCheckIn.isWorkingDay ? `Instructional Day ${dailyCheckIn.workingDayNumber} of 90 (${dailyCheckIn.dayName})` : dailyCheckIn.isHoliday ? `Holiday: ${dailyCheckIn.holidayName}` : 'Non-Instructional Day'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Date Picker for Check-In */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Date:</span>
+                  <input
+                    type="date"
+                    value={checkInDate}
+                    onChange={(e) => setCheckInDate(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {dailyCheckIn.isHoliday ? (
+                <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-center gap-3 text-amber-200 text-xs">
+                  <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <strong>Official University Holiday: {dailyCheckIn.holidayName}</strong>
+                    <p className="text-amber-300/80 mt-0.5">Classes are suspended according to the registrar calendar. No attendance check-in is required today.</p>
+                  </div>
+                </div>
+              ) : !dailyCheckIn.isWorkingDay ? (
+                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs">
+                  ☕ <strong>{dailyCheckIn.dayName} (Weekly Off)</strong>: No scheduled instructional classes today.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
+                    <span>Did you attend your lectures on this date? Select your status:</span>
+                    <span className="text-indigo-400 font-mono">
+                      {dailyCheckIn.subjects.filter(s => s.isLogged).length} of {dailyCheckIn.subjects.length} Logged
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {dailyCheckIn.subjects.map((subItem) => {
+                      const isLogged = subItem.isLogged;
+                      const status = subItem.status;
+
+                      return (
+                        <div
+                          key={subItem.subject.id}
+                          className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col justify-between gap-3 hover:border-slate-700 transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-xs font-bold text-white">{subItem.subject.name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                Current: <strong className="text-slate-200">{subItem.subject.attended}/{subItem.subject.total}</strong> ({((subItem.subject.attended / (subItem.subject.total || 1)) * 100).toFixed(1)}%)
+                              </div>
+                            </div>
+                            {isLogged && (
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                status === 'PRESENT' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                status === 'ABSENT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                                'bg-slate-800 text-slate-300'
+                              }`}>
+                                {status === 'PRESENT' ? '✅ Attended' : status === 'ABSENT' ? '❌ Absent' : '⏸️ Cancelled'}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'PRESENT')}
+                              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                                status === 'PRESENT'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                                  : 'bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-500/30'
+                              }`}
+                            >
+                              Attended (+1)
+                            </button>
+                            <button
+                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'ABSENT')}
+                              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                                status === 'ABSENT'
+                                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
+                                  : 'bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 border border-rose-500/30'
+                              }`}
+                            >
+                              Skipped (+0)
+                            </button>
+                            <button
+                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'CANCELLED')}
+                              className={`py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all ${
+                                status === 'CANCELLED'
+                                  ? 'bg-slate-700 text-white'
+                                  : 'bg-slate-800/80 hover:bg-slate-800 text-slate-400'
+                              }`}
+                              title="Class was cancelled by teacher/college"
+                            >
+                              Off
+                            </button>
+                            {isLogged && (
+                              <button
+                                onClick={() => handleUndoDailyAttendance(subItem.subject.id)}
+                                className="py-1.5 px-2 rounded-xl text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                                title="Reset check-in"
+                              >
+                                ↺
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Subject Cards Grid */}

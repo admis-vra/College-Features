@@ -316,7 +316,8 @@ export function findMatchingSubject(query: string, subjects: AttendanceSubject[]
 // -------------------------------------------------------------
 // SEMESTER-LEVEL ATTENDANCE PROJECTION (GEHU WORKING DAYS)
 // -------------------------------------------------------------
-import { getSemesterWorkingDaysStats } from './academicCalendarEngine';
+import { getSemesterWorkingDaysStats, getGEHUDayDetails } from './academicCalendarEngine';
+import { DailyAttendanceRecord } from '../storage/db';
 
 export interface SemesterAttendanceProjection {
   subjectName: string;
@@ -395,4 +396,134 @@ export function calculateSemesterAttendanceProjection(
     summaryAdvice
   };
 }
+
+// -------------------------------------------------------------
+// DAILY WORKING DAY CHECK-IN & REAL-TIME ATTENDANCE LOGGING
+// -------------------------------------------------------------
+
+export interface DailySubjectCheckInStatus {
+  subject: AttendanceSubject;
+  isLogged: boolean;
+  status?: 'PRESENT' | 'ABSENT' | 'CANCELLED';
+  logId?: string;
+}
+
+export interface DayAttendanceStatus {
+  date: string;
+  dayName: string;
+  workingDayNumber: number | null;
+  isWorkingDay: boolean;
+  isHoliday: boolean;
+  holidayName?: string;
+  isCompleted: boolean;
+  subjects: DailySubjectCheckInStatus[];
+}
+
+export function getDailyCheckInStatus(dateStr: string): DayAttendanceStatus {
+  const dayInfo = getGEHUDayDetails(dateStr);
+  const subjects = loadStudentSubjects();
+  const allLogs = db.getDailyLogs().filter(l => l.date === dateStr);
+
+  const subjectStatuses: DailySubjectCheckInStatus[] = subjects.map(s => {
+    const existing = allLogs.find(l => l.subjectId === s.id);
+    return {
+      subject: s,
+      isLogged: !!existing,
+      status: existing?.status,
+      logId: existing?.id
+    };
+  });
+
+  const isCompleted = subjectStatuses.length > 0 && subjectStatuses.every(s => s.isLogged);
+
+  return {
+    date: dateStr,
+    dayName: dayInfo.dayName,
+    workingDayNumber: dayInfo.workingDayNumber,
+    isWorkingDay: dayInfo.isWorkingDay,
+    isHoliday: dayInfo.isHoliday,
+    holidayName: dayInfo.holidayName,
+    isCompleted,
+    subjects: subjectStatuses
+  };
+}
+
+export function recordDailyClassAttendance(
+  dateStr: string,
+  subjectId: string,
+  status: 'PRESENT' | 'ABSENT' | 'CANCELLED'
+): { updatedSubject: AttendanceSubject; record: DailyAttendanceRecord } {
+  const dayInfo = getGEHUDayDetails(dateStr);
+  const subjects = loadStudentSubjects();
+  const targetSubject = subjects.find(s => s.id === subjectId);
+
+  if (!targetSubject) {
+    throw new Error(`Subject not found with id: ${subjectId}`);
+  }
+
+  // Check if there was an existing log for this day and subject to prevent double counting
+  const existingLogs = db.getDailyLogs();
+  const previousRecord = existingLogs.find(l => l.date === dateStr && l.subjectId === subjectId);
+
+  // If there was a previous record today, revert its effect first
+  if (previousRecord) {
+    if (previousRecord.status === 'PRESENT') {
+      targetSubject.attended = Math.max(0, targetSubject.attended - 1);
+      targetSubject.total = Math.max(0, targetSubject.total - 1);
+    } else if (previousRecord.status === 'ABSENT') {
+      targetSubject.total = Math.max(0, targetSubject.total - 1);
+    }
+  }
+
+  // Apply new status
+  if (status === 'PRESENT') {
+    targetSubject.attended += 1;
+    targetSubject.total += 1;
+  } else if (status === 'ABSENT') {
+    targetSubject.total += 1;
+  }
+  // If CANCELLED: no increments to attended or total
+
+  // Persist updated subject list
+  saveStudentSubjects(subjects);
+
+  // Save log record to IndexedDB
+  const record: DailyAttendanceRecord = {
+    id: `log_${dateStr}_${subjectId}`,
+    date: dateStr,
+    workingDayNumber: dayInfo.workingDayNumber,
+    subjectId: targetSubject.id,
+    subjectName: targetSubject.name,
+    status,
+    timestamp: new Date().toISOString()
+  };
+
+  db.addDailyLog(record);
+
+  return { updatedSubject: targetSubject, record };
+}
+
+export function undoDailyClassAttendance(
+  dateStr: string,
+  subjectId: string
+): { updatedSubject?: AttendanceSubject } {
+  const subjects = loadStudentSubjects();
+  const targetSubject = subjects.find(s => s.id === subjectId);
+  const existingLogs = db.getDailyLogs();
+  const previousRecord = existingLogs.find(l => l.date === dateStr && l.subjectId === subjectId);
+
+  if (targetSubject && previousRecord) {
+    if (previousRecord.status === 'PRESENT') {
+      targetSubject.attended = Math.max(0, targetSubject.attended - 1);
+      targetSubject.total = Math.max(0, targetSubject.total - 1);
+    } else if (previousRecord.status === 'ABSENT') {
+      targetSubject.total = Math.max(0, targetSubject.total - 1);
+    }
+    saveStudentSubjects(subjects);
+    db.saveDailyLogs(existingLogs.filter(l => !(l.date === dateStr && l.subjectId === subjectId)));
+  }
+
+  return { updatedSubject: targetSubject };
+}
+
 
