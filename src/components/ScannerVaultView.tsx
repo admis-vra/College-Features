@@ -13,7 +13,11 @@ import {
   Image as ImageIcon,
   Clock,
   ShieldCheck,
-  Database
+  Database,
+  Trash2,
+  Edit3,
+  Plus,
+  X
 } from 'lucide-react';
 import { 
   extractDocumentFromImage, 
@@ -48,6 +52,94 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
   const [activeSyncSuccess, setActiveSyncSuccess] = useState<string | null>(null);
   const [storageQuota, setStorageQuota] = useState<StorageQuotaInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Subject Table Refinement & Cleaning States
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editSubjectData, setEditSubjectData] = useState<{ name: string; code: string; attended: number; total: number }>({
+    name: '',
+    code: '',
+    attended: 0,
+    total: 0
+  });
+
+  const handleDeleteSubjectRow = (index: number) => {
+    if (!scanResult || !scanResult.extractedData.subjects) return;
+    const updated = scanResult.extractedData.subjects.filter((_, idx) => idx !== index);
+    const totalAtt = updated.reduce((a, b) => a + b.attended, 0);
+    const totalCond = updated.reduce((a, b) => a + b.total, 0);
+    const pct = totalCond > 0 ? ((totalAtt / totalCond) * 100).toFixed(1) : '0';
+
+    setScanResult({
+      ...scanResult,
+      summaryText: `Extracted ${updated.length} subjects with ${pct}% overall attendance from ERP dashboard screenshot.`,
+      extractedData: {
+        ...scanResult.extractedData,
+        subjects: updated
+      }
+    });
+    if (editingIndex === index) setEditingIndex(null);
+  };
+
+  const handleStartEdit = (index: number, sub: any) => {
+    setEditingIndex(index);
+    setEditSubjectData({
+      name: sub.name,
+      code: sub.code || 'CORE',
+      attended: sub.attended,
+      total: sub.total
+    });
+  };
+
+  const handleSaveEdit = (index: number) => {
+    if (!scanResult || !scanResult.extractedData.subjects) return;
+    const updated = [...scanResult.extractedData.subjects];
+    updated[index] = {
+      ...updated[index],
+      name: editSubjectData.name.trim() || updated[index].name,
+      code: editSubjectData.code.trim() || updated[index].code,
+      attended: Math.max(0, editSubjectData.attended),
+      total: Math.max(1, editSubjectData.total)
+    };
+    const totalAtt = updated.reduce((a, b) => a + b.attended, 0);
+    const totalCond = updated.reduce((a, b) => a + b.total, 0);
+    const pct = totalCond > 0 ? ((totalAtt / totalCond) * 100).toFixed(1) : '0';
+
+    setScanResult({
+      ...scanResult,
+      summaryText: `Extracted ${updated.length} subjects with ${pct}% overall attendance from ERP dashboard screenshot.`,
+      extractedData: {
+        ...scanResult.extractedData,
+        subjects: updated
+      }
+    });
+    setEditingIndex(null);
+  };
+
+  const handleAddSubjectRow = () => {
+    if (!scanResult) return;
+    const currentList = scanResult.extractedData.subjects || [];
+    const newSubject = {
+      id: `manual_ocr_${Date.now()}`,
+      name: 'New Core Subject',
+      code: `TCS-${100 + currentList.length + 1}`,
+      attended: 10,
+      total: 12,
+      targetPercentage: 75
+    };
+    const updated = [...currentList, newSubject];
+    const totalAtt = updated.reduce((a, b) => a + b.attended, 0);
+    const totalCond = updated.reduce((a, b) => a + b.total, 0);
+    const pct = totalCond > 0 ? ((totalAtt / totalCond) * 100).toFixed(1) : '0';
+
+    setScanResult({
+      ...scanResult,
+      summaryText: `Extracted ${updated.length} subjects with ${pct}% overall attendance from ERP dashboard screenshot.`,
+      extractedData: {
+        ...scanResult.extractedData,
+        subjects: updated
+      }
+    });
+  };
 
   useEffect(() => {
     getStorageQuotaInfo().then(setStorageQuota);
@@ -327,22 +419,95 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
                       <FileText className="w-3.5 h-3.5 text-indigo-400" />
                       Extracted ERP Subjects ({scanResult.extractedData.subjects.length})
                     </h4>
+                    <button
+                      onClick={handleAddSubjectRow}
+                      className="px-3 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Subject
+                    </button>
                   </div>
 
                   <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/50">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                         <tr>
-                          <th className="p-3">Subject</th>
+                          <th className="p-3">Subject Name</th>
                           <th className="p-3">Code</th>
                           <th className="p-3 text-center">Attended / Total</th>
                           <th className="p-3 text-center">Current %</th>
+                          <th className="p-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 text-slate-200">
                         {scanResult.extractedData.subjects.map((sub, idx) => {
+                          const isEditingThis = editingIndex === idx;
                           const pct = sub.total > 0 ? ((sub.attended / sub.total) * 100).toFixed(1) : '0';
                           const isSafe = parseFloat(pct) >= 75;
+
+                          if (isEditingThis) {
+                            return (
+                              <tr key={sub.id || idx} className="bg-indigo-950/30">
+                                <td className="p-2.5">
+                                  <input
+                                    type="text"
+                                    value={editSubjectData.name}
+                                    onChange={(e) => setEditSubjectData({ ...editSubjectData, name: e.target.value })}
+                                    className="w-full bg-slate-900 border border-indigo-500/60 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none"
+                                    placeholder="Subject Name"
+                                  />
+                                </td>
+                                <td className="p-2.5">
+                                  <input
+                                    type="text"
+                                    value={editSubjectData.code}
+                                    onChange={(e) => setEditSubjectData({ ...editSubjectData, code: e.target.value })}
+                                    className="w-20 bg-slate-900 border border-indigo-500/60 rounded-lg px-2 py-1 text-xs text-indigo-300 font-mono focus:outline-none"
+                                    placeholder="Code"
+                                  />
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={editSubjectData.attended}
+                                      onChange={(e) => setEditSubjectData({ ...editSubjectData, attended: parseInt(e.target.value, 10) || 0 })}
+                                      className="w-14 bg-slate-900 border border-indigo-500/60 rounded-lg px-2 py-1 text-xs text-emerald-400 font-mono text-center focus:outline-none"
+                                    />
+                                    <span>/</span>
+                                    <input
+                                      type="number"
+                                      value={editSubjectData.total}
+                                      onChange={(e) => setEditSubjectData({ ...editSubjectData, total: parseInt(e.target.value, 10) || 0 })}
+                                      className="w-14 bg-slate-900 border border-indigo-500/60 rounded-lg px-2 py-1 text-xs text-white font-mono text-center focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-bold text-xs text-indigo-300">
+                                  {editSubjectData.total > 0 ? ((editSubjectData.attended / editSubjectData.total) * 100).toFixed(1) : '0'}%
+                                </td>
+                                <td className="p-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={() => handleSaveEdit(idx)}
+                                      className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+                                      title="Save row"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingIndex(null)}
+                                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg transition-colors"
+                                      title="Cancel"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
+
                           return (
                             <tr key={sub.id || idx} className="hover:bg-slate-800/30 transition-colors">
                               <td className="p-3 font-medium text-white">{sub.name}</td>
@@ -356,6 +521,24 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
                                 }`}>
                                   {pct}%
                                 </span>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleStartEdit(idx, sub)}
+                                    className="p-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                                    title="Edit subject row"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSubjectRow(idx)}
+                                    className="p-1.5 bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 rounded-lg transition-colors"
+                                    title="Delete invalid subject row"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

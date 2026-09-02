@@ -59,48 +59,155 @@ export function detectDocumentType(rawText: string): OCRDocType {
   return 'AUTO_DETECT';
 }
 
+export function cleanERPRow(rawLine: string): {
+  isHeaderOrIgnored: boolean;
+  subjectName?: string;
+  code?: string;
+  attended?: number;
+  total?: number;
+} {
+  const lower = rawLine.toLowerCase();
+
+  // 1. Blacklist headers, metadata, student details, and table titles
+  const headerBlacklist = [
+    'your attendance',
+    'attendance %',
+    'attendance percentage',
+    'from / to',
+    'from:',
+    'to:',
+    'student name',
+    'roll no',
+    'father name',
+    'university roll',
+    'enrollment',
+    'academic year',
+    'academic session',
+    'aggregate',
+    'overall attendance',
+    'total attendance',
+    'date wise',
+    'period wise',
+    'cumulative',
+    'delivered',
+    'report card',
+    'printed on',
+    'signature',
+    'sr no',
+    's.no'
+  ];
+
+  if (headerBlacklist.some(term => lower.includes(term))) {
+    return { isHeaderOrIgnored: true };
+  }
+
+  // 2. Extract attended and total counts (e.g. "7 / 13", "7/13", "20 / 26", "20 26", "20 | 26")
+  const ratioMatch = rawLine.match(/(?:^|\s|\|)(\d{1,3})\s*(?:\/|\s+|\|)\s*(\d{1,3})(?:\s|\||$)/);
+  if (!ratioMatch) {
+    return { isHeaderOrIgnored: true };
+  }
+
+  const numA = parseInt(ratioMatch[1], 10);
+  const numB = parseInt(ratioMatch[2], 10);
+  const attended = Math.min(numA, numB);
+  const total = Math.max(numA, numB);
+
+  // If numbers look like dates or out of semester lecture bounds, ignore
+  if (total <= 0 || total > 200 || (numA > 31 && numB > 31)) {
+    return { isHeaderOrIgnored: true };
+  }
+
+  // 3. Clean subject text by removing numbers, percentages, and ratio matches
+  let cleanText = rawLine
+    .replace(ratioMatch[0], ' ')
+    .replace(/\b\d{1,3}(?:\.\d{1,2})?\s*%/g, ' ')
+    .replace(/[|—_]/g, ' ')
+    .trim();
+
+  // 4. Strip stray OCR prefixes and junk brackets
+  cleanText = cleanText
+    .replace(/^[\s&[\]()\{\}:,;.\-_/\\|'"]+/, '')
+    .replace(/[\s&[\]()\{\}:,;.\-_/\\|'"]+$/, '');
+
+  // Strip leading noise like "[J ", "& [J ", "[O ", "i(s) ", "Xcs ", "Teszas ", "Tes "
+  cleanText = cleanText
+    .replace(/^(?:&?\s*\[?\s*[A-Z]\s+)/i, '')
+    .replace(/^(?:\[|&|\]|\(|\))+/g, '')
+    .trim();
+
+  // 5. Strip Faculty / Teacher patterns from the end or middle
+  // e.g. "Dr ANUPAM SINGH", "PCS SUSHANT CHAMOLT", "PCS Aayush Kumar", "AMIT GUPTA", "Suhail Vij Vishal Chhabra"
+  cleanText = cleanText
+    .replace(/\b(?:Dr\.?|Prof\.?|Mr\.?|Ms\.?|Mrs\.?)\s+[A-Za-z\s]+$/i, '')
+    .replace(/\b(?:PCS|TCS|XCS|TES|TESZAS)\s+[A-Za-z\s,']+$/i, '')
+    .replace(/\b(?:SUSHANT\s+CHAMOL[TI]|ANUPAM\s+SINGH|AMIT\s+GUPTA|AAYUSH\s+KUMAR|SUHAIL\s+VIJ|VISHAL\s+CHHABRA)[\w\s,']*$/i, '')
+    .replace(/\b(?:Suhail\s+Vij|Vishal\s+Chhabra|Aayush\s+Kumar)[\w\s,']*$/i, '')
+    .replace(/\s*[,']\s*(?:Suhail|Vishal|Aayush|Sushant|Anupam|Amit).*$/i, '');
+
+  // Strip course type tags like (s), +(S), (L), (P), (T), i(s)
+  cleanText = cleanText
+    .replace(/\+\s*\([A-Za-z]\)/g, '')
+    .replace(/\([A-Za-z]\)/g, '')
+    .replace(/i\([A-Za-z]\)/g, '')
+    .replace(/\b(?:Xcs|Tes|Teszas)\b/gi, '')
+    .trim();
+
+  // 6. Fix common OCR misspellings of Computer Science subjects
+  cleanText = cleanText
+    .replace(/pata\s*structures/gi, 'Data Structures')
+    .replace(/O\s*Ps\s*with\s*(?:Cr\+|C\+\+)/gi, 'OOPs with C++')
+    .replace(/careerskills/gi, 'Career Skills')
+    .replace(/career\s*skills\s*i/gi, 'Career Skills')
+    .replace(/object\s*oriented\s*programming\s*with\s*(?:C\+\s*\+|C\+|Cr\+)/gi, 'Object Oriented Programming with C++')
+    .replace(/Cr\+/gi, 'C++')
+    .replace(/C\+\s*\+/gi, 'C++')
+    .replace(/Responsible\s+and\s+Explainable\s+AI/gi, 'Responsible and Explainable AI');
+
+  // Strip trailing brackets/commas
+  cleanText = cleanText
+    .replace(/[\s&[\]()\{\}:,;.\-_/\\|'"]+$/, '')
+    .replace(/^[\s&[\]()\{\}:,;.\-_/\\|'"]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // 7. Extract Course Code if embedded (e.g. TCS-301, PCS-305, etc.)
+  let code: string | undefined = undefined;
+  const codeMatch = cleanText.match(/\b([A-Z]{2,4}[-\s]?\d{3,4})\b/i);
+  if (codeMatch) {
+    code = codeMatch[1].toUpperCase().replace(/\s+/, '-');
+    cleanText = cleanText.replace(codeMatch[0], '').trim();
+  }
+
+  // Final length sanity check
+  if (cleanText.length < 3) {
+    return { isHeaderOrIgnored: true };
+  }
+
+  return {
+    isHeaderOrIgnored: false,
+    subjectName: cleanText,
+    code,
+    attended,
+    total
+  };
+}
+
 export function parseAttendanceText(rawText: string): AttendanceSubject[] {
   const subjects: AttendanceSubject[] = [];
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Match typical ERP lines: "TCS-301 Object Oriented Programming 28 32 87.5%" or "Data Structures | 25 | 30 | 83.33"
-  const numberPatt = /(\d{1,3})\s*(?:\/|\s+|\|)\s*(\d{1,3})/;
-
   lines.forEach((line, idx) => {
-    // Check if line contains numbers resembling attended/total
-    const match = line.match(numberPatt);
-    const hasPercent = line.includes('%') || /(\d{1,3}\.?\d{0,2})%?/.test(line);
-
-    if (match || hasPercent) {
-      let num1 = match ? parseInt(match[1], 10) : 0;
-      let num2 = match ? parseInt(match[2], 10) : 0;
-
-      // Ensure attended <= total
-      let attended = Math.min(num1, num2);
-      let total = Math.max(num1, num2);
-
-      // Clean subject title from the line
-      let subjectName = line
-        .replace(numberPatt, '')
-        .replace(/(\d{1,3}\.?\d{0,2})%?/g, '')
-        .replace(/[|:_\-—]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      // Check subject code e.g. TCS-301 or CS301
-      const codeMatch = subjectName.match(/\b([A-Z]{2,4}[-\s]?\d{3,4})\b/i);
-      const code = codeMatch ? codeMatch[1].toUpperCase() : undefined;
-      if (code && codeMatch) {
-        subjectName = subjectName.replace(codeMatch[0], '').trim();
-      }
-
-      if (subjectName.length >= 3 && total > 0) {
+    const cleaned = cleanERPRow(line);
+    if (!cleaned.isHeaderOrIgnored && cleaned.subjectName && cleaned.total !== undefined && cleaned.attended !== undefined) {
+      // Avoid duplicate subjects
+      const isDuplicate = subjects.some(s => s.name.toLowerCase() === cleaned.subjectName!.toLowerCase());
+      if (!isDuplicate) {
         subjects.push({
           id: `ocr_sub_${Date.now()}_${idx}`,
-          name: subjectName,
-          code: code || `SUB-${100 + idx}`,
-          attended: attended,
-          total: total,
+          name: cleaned.subjectName,
+          code: cleaned.code || `SUB-${101 + subjects.length}`,
+          attended: cleaned.attended,
+          total: cleaned.total,
           targetPercentage: 75
         });
       }
