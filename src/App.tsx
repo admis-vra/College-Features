@@ -309,32 +309,117 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row font-sans selection:bg-indigo-500 selection:text-white">
       
-      {/* Top Main Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          
-          {/* Logo & Brand */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/20">
+      {/* Mobile Top Header */}
+      <header className="lg:hidden sticky top-0 z-40 bg-slate-900/90 backdrop-blur-xl border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-md shadow-indigo-500/20">
+            <div className="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+            </div>
+          </div>
+          <div>
+            <span className="font-extrabold text-base text-white tracking-tight">CampusOS</span>
+            <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              AI v2.0
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Quick Attendance Pill */}
+          <button 
+            onClick={() => setActiveTab('attendance')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs"
+          >
+            <div className={`w-2 h-2 rounded-full ${overallMetrics.overallPercentage >= 75 ? 'bg-emerald-400' : 'bg-red-400'}`} />
+            <strong className="text-white font-mono">{overallMetrics.overallPercentage}%</strong>
+          </button>
+
+          {/* Mobile Drawer Button */}
+          <button
+            onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+            aria-label="Toggle Navigation"
+          >
+            {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Navigation Drawer Overlay */}
+      {mobileDrawerOpen && (
+        <div className="lg:hidden fixed inset-x-0 top-[57px] bottom-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 px-4 py-4 space-y-2 overflow-y-auto animate-fadeIn">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2 pb-1">
+            Navigation Menu
+          </div>
+          {[
+            { id: 'chat', label: 'AI Assistant', icon: Bot },
+            { id: 'scan', label: 'Smart OCR Scanner', icon: Camera, badge: 'New' },
+            { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon, badge: nextExamInfo.nextExam ? `${nextExamInfo.days}d` : undefined },
+            { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
+            { id: 'find', label: 'Vacant Rooms', icon: Search },
+            { id: 'timeline', label: 'Room Schedule', icon: Clock }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  setMobileDrawerOpen(false);
+                }}
+                className={`w-full px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between transition-all ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-900 bg-slate-900/60 border border-slate-800/80'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </div>
+                {tab.badge && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/30 text-indigo-300'
+                  }`}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Desktop Left Sidebar */}
+      <aside className="hidden lg:flex w-64 xl:w-72 h-screen sticky top-0 flex-col justify-between border-r border-slate-800/80 bg-slate-900/90 backdrop-blur-2xl p-4 shrink-0 select-none z-30 overflow-y-auto">
+        {/* Brand & Links */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-3 px-2 pt-2">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/25 shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-indigo-400" />
               </div>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg text-white tracking-tight">CampusOS</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-lg text-white tracking-tight">CampusOS</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   AI v2.0
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">Intelligent Student Operating System</p>
+              <p className="text-[11px] text-slate-400 font-medium">GEHU Student Suite</p>
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs */}
-          <nav className="hidden lg:flex items-center gap-1 bg-slate-950/60 p-1.5 rounded-2xl border border-slate-800/80">
+          {/* Navigation Links */}
+          <nav className="space-y-1.5">
+            <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Features & Navigation
+            </div>
             {[
               { id: 'chat', label: 'AI Assistant', icon: Bot },
               { id: 'scan', label: 'Smart OCR Scanner', icon: Camera, badge: 'New' },
@@ -349,17 +434,19 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`relative px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all group ${
                     isActive
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-bold'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 transition-transform group-hover:scale-110 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{tab.label}</span>
+                  </div>
                   {tab.badge && (
-                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/30 text-indigo-300'
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/30'
                     }`}>
                       {tab.badge}
                     </span>
@@ -368,76 +455,72 @@ export default function App() {
               );
             })}
           </nav>
-
-          {/* Right Header Stats & Mobile Toggle */}
-          <div className="flex items-center gap-3">
-            {/* Live Overall Attendance Pill */}
-            <div 
-              onClick={() => setActiveTab('attendance')}
-              className="cursor-pointer hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/80 hover:border-indigo-500/40 transition-colors"
-            >
-              <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                overallMetrics.overallPercentage >= 75 ? 'bg-emerald-400' : 'bg-red-400'
-              }`} />
-              <div className="text-xs">
-                <span className="text-slate-400">Attendance: </span>
-                <strong className="text-white font-mono">{overallMetrics.overallPercentage}%</strong>
-              </div>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
-              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
-            >
-              {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
         </div>
 
-        {/* Mobile Navigation Drawer */}
-        {mobileDrawerOpen && (
-          <div className="lg:hidden bg-slate-900 border-b border-slate-800 px-4 py-3 space-y-1 animate-fadeIn">
-            {[
-              { id: 'chat', label: 'AI Assistant', icon: Bot },
-              { id: 'scan', label: 'Smart OCR Scanner', icon: Camera },
-              { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon },
-              { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
-              { id: 'find', label: 'Vacant Rooms', icon: Search },
-              { id: 'timeline', label: 'Room Schedule', icon: Clock }
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id as any);
-                    setMobileDrawerOpen(false);
-                  }}
-                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                    isActive
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+        {/* Sidebar Bottom Widgets */}
+        <div className="pt-4 border-t border-slate-800/80 space-y-3">
+          {/* Quick Attendance Widget Card */}
+          <div
+            onClick={() => setActiveTab('attendance')}
+            className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 hover:border-indigo-500/40 cursor-pointer transition-all group"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-medium text-slate-400">Total Attendance</span>
+              <span className={`text-xs font-mono font-bold ${overallMetrics.overallPercentage >= 75 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {overallMetrics.overallPercentage}%
+              </span>
+            </div>
+            {/* Progress Bar */}
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  overallMetrics.overallPercentage >= 75 ? 'bg-emerald-500' : 'bg-red-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, overallMetrics.overallPercentage))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2">
+              <span>{overallMetrics.overallPercentage >= 75 ? '🟢 Safe (≥75%)' : '🔴 Low Attendance'}</span>
+              <span className="text-indigo-400 group-hover:underline">Manage →</span>
+            </div>
           </div>
-        )}
-      </header>
+
+          {/* Exam Countdown Widget */}
+          {nextExamInfo.nextExam && (
+            <div
+              onClick={() => setActiveTab('calendar')}
+              className="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-900/40 hover:border-indigo-500/40 cursor-pointer transition-all flex items-center justify-between"
+            >
+              <div>
+                <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Next Examination</div>
+                <div className="text-xs font-bold text-white truncate max-w-[120px]">{nextExamInfo.nextExam.title}</div>
+              </div>
+              <div className="text-right">
+                <span className="text-base font-black text-indigo-300 font-mono">{nextExamInfo.days}</span>
+                <span className="text-[10px] text-slate-400 block -mt-1">days left</span>
+              </div>
+            </div>
+          )}
+
+          {/* System Ready Tag */}
+          <div className="px-2 pt-1 flex items-center justify-between text-[10px] text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              GEHU Engine Ready
+            </span>
+            <span className="font-mono">v2.0</span>
+          </div>
+        </div>
+      </aside>
 
       {/* Main App Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto p-4 sm:p-6 lg:p-8">
         
         {/* ======================================================== */}
         {/* TAB 1: AI CHAT ASSISTANT (PRIMARY INTERFACE) */}
         {/* ======================================================== */}
         {activeTab === 'chat' && (
-          <div className="max-w-5xl mx-auto h-[calc(100vh-10rem)] flex flex-col bg-slate-900/80 border border-slate-800 rounded-3xl backdrop-blur-xl shadow-2xl overflow-hidden animate-fadeIn">
+          <div className="max-w-5xl mx-auto h-[calc(100dvh-5rem)] lg:h-[calc(100vh-4rem)] flex flex-col bg-slate-900/80 border border-slate-800 rounded-3xl backdrop-blur-xl shadow-2xl overflow-hidden animate-fadeIn">
             
             {/* Chat Top Banner */}
             <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
