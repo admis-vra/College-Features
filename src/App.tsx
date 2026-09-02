@@ -649,6 +649,103 @@ export default function App() {
                             </div>
                           </div>
                         )}
+
+                        {/* Widget: GEHU Working Days Stats */}
+                        {msg.widget.type === 'working_days_stats' && (
+                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-indigo-500/40 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <CalendarIcon className="w-4 h-4 text-indigo-400" />
+                                <span className="text-xs font-bold text-white uppercase tracking-wider">{msg.widget.title}</span>
+                              </div>
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold">
+                                {msg.widget.data.progressPercentage}% Completed
+                              </span>
+                            </div>
+
+                            {/* Working Day Progress Bar */}
+                            <div className="space-y-1">
+                              <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-500"
+                                  style={{ width: `${msg.widget.data.progressPercentage}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                                <span>Day 1 (July 13)</span>
+                                <span className="text-white font-bold">Day {msg.widget.data.currentDayNumber} of 90</span>
+                                <span>Day 90 (Nov 14)</span>
+                              </div>
+                            </div>
+
+                            {/* Quick Stats Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
+                                <div className="text-sm font-bold text-emerald-400 font-mono">{msg.widget.data.remainingDays} Days</div>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[10px] text-slate-400 uppercase">Next Holiday</div>
+                                <div className="text-xs font-semibold text-amber-300 truncate">{msg.widget.data.nextHoliday?.name || 'None'}</div>
+                              </div>
+                              <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[10px] text-slate-400 uppercase">Next Exam</div>
+                                <div className="text-xs font-semibold text-indigo-300 truncate">{msg.widget.data.nextExamBlock?.code || 'ESET'}</div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setActiveTab('calendar')}
+                              className="w-full mt-1 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold rounded-xl transition-all"
+                            >
+                              Explore Complete GEHU Calendar & Datesheet →
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Widget: Semester Attendance Forecast */}
+                        {msg.widget.type === 'semester_attendance_forecast' && (
+                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-indigo-500/40 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                <TrendingUp className="w-4 h-4 text-indigo-400" />
+                                {msg.widget.data.subjectName}
+                              </span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono ${
+                                msg.widget.data.is75Achievable ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                              }`}>
+                                {msg.widget.data.is75Achievable ? '75% Target Feasible' : 'Critical Margin'}
+                              </span>
+                            </div>
+
+                            {/* Projection Metric Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[9px] text-slate-400 uppercase">Current</div>
+                                <div className="text-xs font-bold text-white font-mono">{msg.widget.data.currentPercentage}%</div>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[9px] text-slate-400 uppercase">Max Achievable</div>
+                                <div className="text-xs font-bold text-indigo-300 font-mono">{msg.widget.data.maxAchievablePercentage}%</div>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[9px] text-slate-400 uppercase">Must Attend</div>
+                                <div className="text-xs font-bold text-emerald-400 font-mono">{msg.widget.data.minClassesToAttendFor75} classes</div>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                                <div className="text-[9px] text-slate-400 uppercase">Safe Bunks Left</div>
+                                <div className="text-xs font-bold text-amber-300 font-mono">{msg.widget.data.maxBunksAllowedAcrossSemester} classes</div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setActiveTab('attendance')}
+                              className="w-full mt-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
+                            >
+                              Manage Subject in Attendance Lab →
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

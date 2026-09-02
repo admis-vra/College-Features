@@ -22,74 +22,131 @@ export interface EnrichedCalendarEvent extends AcademicCalendarEvent {
   formattedDate: string;
 }
 
-// Default academic calendar events seed
+// Official Graphic Era Hill University (GEHU) Academic Calendar Seed
 export const DEFAULT_ACADEMIC_EVENTS: AcademicCalendarEvent[] = [
   {
-    id: 'evt_1',
-    title: 'Mid-Term Examination: C++ & Data Structures',
-    type: 'MIDTERM',
-    date: '2026-09-15',
-    subject: 'Object Oriented Programming with C++',
-    location: 'CS Lab 3 & Room 204',
-    description: 'Units 1-3. Written + Lab Code Assessment.'
+    id: 'gehu_commence_senior',
+    title: 'Commencement of 3rd, 5th and 7th Semesters',
+    type: 'REGISTRATION',
+    date: '2026-07-13',
+    description: 'First instructional working day (Day 1 of 90) for senior semesters.'
   },
   {
-    id: 'evt_2',
-    title: 'Mid-Term Examination: Cloud Computing',
-    type: 'MIDTERM',
-    date: '2026-09-18',
-    subject: 'Fundamentals of Cloud Computing and Big Data',
-    location: 'LT-102',
-    description: 'Architecture, Virtualization & MapReduce concepts.'
+    id: 'gehu_commence_freshers',
+    title: 'Commencement of 1st Semester Induction Program',
+    type: 'REGISTRATION',
+    date: '2026-07-20',
+    description: 'Induction program & orientation for newly admitted 1st semester students.'
   },
   {
-    id: 'evt_3',
-    title: 'Mid-Term Examination: Cryptography & Network Security',
-    type: 'MIDTERM',
-    date: '2026-09-22',
-    subject: 'Introduction to Cryptography',
-    location: 'LT-104',
-    description: 'Symmetric/Asymmetric Ciphers, RSA, AES.'
+    id: 'gehu_hol_independence',
+    title: 'Independence Day (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-08-15',
+    description: 'National holiday - Flag hoisting & campus closed.'
   },
   {
-    id: 'evt_4',
+    id: 'gehu_hol_eid',
+    title: 'Eid-e-Milad (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-08-26',
+    description: 'Gazetted university holiday.'
+  },
+  {
+    id: 'gehu_hol_raksha',
+    title: 'Raksha Bandhan (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-08-28',
+    description: 'University holiday.'
+  },
+  {
+    id: 'gehu_hol_janmashtami',
+    title: 'Sri Krishna Janmashtami (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-09-04',
+    description: 'University holiday - No classes scheduled.'
+  },
+  {
+    id: 'gehu_exam_tep',
+    title: 'TEP: Term Evaluation - Practical',
+    type: 'MIDTERM',
+    date: '2026-09-14',
+    endDate: '2026-09-19',
+    description: 'Mid-semester practical laboratory evaluations and viva assessments (Days 51-56).'
+  },
+  {
+    id: 'gehu_exam_tet',
+    title: 'TET: Term Evaluation - Theory (Mid-Term Exams)',
+    type: 'MIDTERM',
+    date: '2026-09-21',
+    endDate: '2026-09-26',
+    description: 'Mid-term written examination for all theoretical courses.'
+  },
+  {
+    id: 'gehu_hol_gandhi',
     title: 'Gandhi Jayanti (University Holiday)',
     type: 'HOLIDAY',
     date: '2026-10-02',
     description: 'National holiday - Campus closed.'
   },
   {
-    id: 'evt_5',
-    title: 'Python Mini Project & Lab Record Submission',
-    type: 'SUBMISSION',
-    date: '2026-10-14',
-    subject: 'Python Programming',
-    location: 'Lab 4 to Prof. Sharma',
-    description: 'Full code repository + documentation printout.'
-  },
-  {
-    id: 'evt_6',
-    title: 'Diwali Break & Autumn Fest',
+    id: 'gehu_hol_dussehra',
+    title: 'Dussehra (Vijayadashami)',
     type: 'HOLIDAY',
-    date: '2026-11-01',
-    endDate: '2026-11-06',
-    description: 'Autumn University Break.'
+    date: '2026-10-20',
+    description: 'Festival holiday.'
   },
   {
-    id: 'evt_7',
-    title: 'End-Term Practical / Viva Examination',
-    type: 'EXAM',
-    date: '2026-11-20',
-    endDate: '2026-11-27',
-    description: 'Lab practicals for all enrolled practical subjects.'
+    id: 'gehu_hol_diwali',
+    title: 'Deepawali Break & Festivities',
+    type: 'HOLIDAY',
+    date: '2026-11-05',
+    endDate: '2026-11-11',
+    description: 'Diwali university festival holiday break.'
   },
   {
-    id: 'evt_8',
-    title: 'End-Semester University Theory Examinations',
+    id: 'gehu_last_teaching_day',
+    title: 'Last Instructional Working Day (Day 90)',
+    type: 'EVENT',
+    date: '2026-11-14',
+    description: '90th instructional working day. Regular classroom teaching concludes.'
+  },
+  {
+    id: 'gehu_exam_esep',
+    title: 'ESEP: End Semester Examination - Practical',
     type: 'EXAM',
-    date: '2026-12-05',
-    endDate: '2026-12-23',
-    description: 'Final end-term semester examinations.'
+    date: '2026-11-16',
+    endDate: '2026-11-23',
+    description: 'Final end semester practical examinations and project evaluations.'
+  },
+  {
+    id: 'gehu_hol_gurunanak',
+    title: 'Guru Nanak Jayanti (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-11-24',
+    description: 'University holiday.'
+  },
+  {
+    id: 'gehu_exam_eset',
+    title: 'ESET: End Semester Examination - Theory',
+    type: 'EXAM',
+    date: '2026-11-25',
+    endDate: '2026-12-12',
+    description: 'Comprehensive end semester theoretical examinations conducted by Controller of Examinations.'
+  },
+  {
+    id: 'gehu_hol_christmas',
+    title: 'Christmas (University Holiday)',
+    type: 'HOLIDAY',
+    date: '2026-12-25',
+    description: 'Gazetted university holiday.'
+  },
+  {
+    id: 'gehu_commence_even',
+    title: 'Commencement of Even Semesters (II, IV, VI, VIII & X)',
+    type: 'REGISTRATION',
+    date: '2027-01-04',
+    description: 'Classes commence for upcoming Even Semesters.'
   }
 ];
 
@@ -198,3 +255,239 @@ export function mergeImportedEvents(newEvents: AcademicCalendarEvent[], overwrit
   saveAcademicCalendar(merged);
   return merged;
 }
+
+// =============================================================
+// GEHU WORKING DAYS & ATTENDANCE CALENDAR ENGINE
+// =============================================================
+
+export interface GEHUDayClassification {
+  date: string; // YYYY-MM-DD
+  dayName: string;
+  isWorkingDay: boolean;
+  workingDayNumber: number | null; // 1 to 90
+  isHoliday: boolean;
+  holidayName?: string;
+  isExam: boolean;
+  examCode?: 'TEP' | 'TET' | 'ESEP' | 'ESET';
+  label: string;
+}
+
+export interface SemesterWorkingDaysStats {
+  totalInstructionalDays: number;
+  completedDays: number;
+  remainingDays: number;
+  currentDayNumber: number;
+  progressPercentage: number;
+  currentDate: string;
+  isTodayWorkingDay: boolean;
+  todayLabel: string;
+  nextHoliday?: { name: string; date: string; daysAway: number };
+  nextExamBlock?: { name: string; code: string; startDate: string; daysAway: number };
+  lastTeachingDate: string;
+}
+
+// Explicit Mapping for GEHU Official Odd Semester Instructional Days
+const GEHU_EXPLICIT_WORKING_DAYS: Record<string, number> = {
+  // July (1-17)
+  '2026-07-13': 1, '2026-07-14': 2, '2026-07-15': 3, '2026-07-16': 4, '2026-07-17': 5, '2026-07-18': 6,
+  '2026-07-20': 7, '2026-07-21': 8, '2026-07-22': 9, '2026-07-23': 10, '2026-07-24': 11, '2026-07-25': 12,
+  '2026-07-27': 13, '2026-07-28': 14, '2026-07-29': 15, '2026-07-30': 16, '2026-07-31': 17,
+
+  // August (18-40)
+  '2026-08-01': 18, '2026-08-03': 19, '2026-08-04': 20, '2026-08-05': 21, '2026-08-06': 22, '2026-08-07': 23, '2026-08-08': 24,
+  '2026-08-10': 25, '2026-08-11': 26, '2026-08-12': 27, '2026-08-13': 28, '2026-08-14': 29,
+  '2026-08-17': 30, '2026-08-18': 31, '2026-08-19': 32, '2026-08-20': 33, '2026-08-21': 34, '2026-08-22': 35,
+  '2026-08-24': 36, '2026-08-25': 37, '2026-08-27': 38, '2026-08-29': 39, '2026-08-31': 40,
+
+  // September (41-59)
+  '2026-09-01': 41, '2026-09-02': 42, '2026-09-03': 43, '2026-09-05': 44,
+  '2026-09-07': 45, '2026-09-08': 46, '2026-09-09': 47, '2026-09-10': 48, '2026-09-11': 49, '2026-09-12': 50,
+  '2026-09-14': 51, '2026-09-15': 52, '2026-09-16': 53, '2026-09-17': 54, '2026-09-18': 55, '2026-09-19': 56, // TEP
+  '2026-09-28': 57, '2026-09-29': 58, '2026-09-30': 59,
+
+  // October (60-84)
+  '2026-10-01': 60, '2026-10-03': 61, '2026-10-05': 62, '2026-10-06': 63, '2026-10-07': 64, '2026-10-08': 65,
+  '2026-10-09': 66, '2026-10-10': 67, '2026-10-12': 68, '2026-10-13': 69, '2026-10-14': 70, '2026-10-15': 71,
+  '2026-10-16': 72, '2026-10-17': 73, '2026-10-19': 74, '2026-10-21': 75, '2026-10-22': 76, '2026-10-23': 77,
+  '2026-10-24': 78, '2026-10-26': 79, '2026-10-27': 80, '2026-10-28': 81, '2026-10-29': 82, '2026-10-30': 83, '2026-10-31': 84,
+
+  // November (85-90)
+  '2026-11-02': 85, '2026-11-03': 86, '2026-11-04': 87,
+  '2026-11-12': 88, '2026-11-13': 89, '2026-11-14': 90
+};
+
+// Official GEHU University Holidays
+const GEHU_OFFICIAL_HOLIDAYS: Record<string, string> = {
+  '2026-08-15': 'Independence Day',
+  '2026-08-26': 'Eid-e-Milad',
+  '2026-08-28': 'Raksha Bandhan',
+  '2026-09-04': 'Sri Krishna Janmashtami',
+  '2026-10-02': 'Gandhi Jayanti',
+  '2026-10-20': 'Dussehra (Vijayadashami)',
+  '2026-11-05': 'Deepawali Break',
+  '2026-11-06': 'Deepawali Break',
+  '2026-11-07': 'Deepawali Break',
+  '2026-11-08': 'Deepawali',
+  '2026-11-09': 'Goverdhan Puja',
+  '2026-11-10': 'Bhai Dooj',
+  '2026-11-11': 'Deepawali University Break',
+  '2026-11-24': 'Guru Nanak Jayanti',
+  '2026-12-25': 'Christmas'
+};
+
+// Official GEHU Examination Windows
+const GEHU_EXAM_PERIODS = [
+  { code: 'TEP' as const, name: 'Term Evaluation - Practical', start: '2026-09-14', end: '2026-09-19' },
+  { code: 'TET' as const, name: 'Term Evaluation - Theory (Mid-Term)', start: '2026-09-21', end: '2026-09-26' },
+  { code: 'ESEP' as const, name: 'End Semester Exam - Practical', start: '2026-11-16', end: '2026-11-23' },
+  { code: 'ESET' as const, name: 'End Semester Exam - Theory', start: '2026-11-25', end: '2026-12-12' },
+  { code: 'ESET' as const, name: 'End Semester Exam - Theory (Final)', start: '2026-12-30', end: '2026-12-31' }
+];
+
+export function getGEHUDayDetails(dateStr: string): GEHUDayClassification {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayName = weekdays[dateObj.getDay()];
+
+  // Check holiday
+  const holidayName = GEHU_OFFICIAL_HOLIDAYS[dateStr];
+  if (holidayName) {
+    return {
+      date: dateStr,
+      dayName,
+      isWorkingDay: false,
+      workingDayNumber: null,
+      isHoliday: true,
+      holidayName,
+      isExam: false,
+      label: `Holiday: ${holidayName}`
+    };
+  }
+
+  // Check Sunday
+  if (dateObj.getDay() === 0) {
+    return {
+      date: dateStr,
+      dayName,
+      isWorkingDay: false,
+      workingDayNumber: null,
+      isHoliday: false,
+      isExam: false,
+      label: 'Sunday (Weekly Off)'
+    };
+  }
+
+  // Check exam blocks
+  const exam = GEHU_EXAM_PERIODS.find(e => dateStr >= e.start && dateStr <= e.end);
+  const workingDayNum = GEHU_EXPLICIT_WORKING_DAYS[dateStr] || null;
+
+  if (exam) {
+    return {
+      date: dateStr,
+      dayName,
+      isWorkingDay: workingDayNum !== null,
+      workingDayNumber: workingDayNum,
+      isHoliday: false,
+      isExam: true,
+      examCode: exam.code,
+      label: `${exam.code}: ${exam.name}${workingDayNum ? ` (Day ${workingDayNum})` : ''}`
+    };
+  }
+
+  if (workingDayNum !== null) {
+    return {
+      date: dateStr,
+      dayName,
+      isWorkingDay: true,
+      workingDayNumber: workingDayNum,
+      isHoliday: false,
+      isExam: false,
+      label: `Working Day ${workingDayNum} of 90`
+    };
+  }
+
+  return {
+    date: dateStr,
+    dayName,
+    isWorkingDay: false,
+    workingDayNumber: null,
+    isHoliday: false,
+    isExam: false,
+    label: 'Non-Instructional Day'
+  };
+}
+
+export function getSemesterWorkingDaysStats(referenceDate: Date = new Date()): SemesterWorkingDaysStats {
+  const y = referenceDate.getFullYear();
+  const m = String(referenceDate.getMonth() + 1).padStart(2, '0');
+  const d = String(referenceDate.getDate()).padStart(2, '0');
+  const dateStr = `${y}-${m}-${d}`;
+
+  const todayDetails = getGEHUDayDetails(dateStr);
+  const totalInstructionalDays = 90;
+
+  let currentDayNumber = 0;
+  if (todayDetails.workingDayNumber) {
+    currentDayNumber = todayDetails.workingDayNumber;
+  } else {
+    // Find the latest completed working day
+    const pastDays = Object.entries(GEHU_EXPLICIT_WORKING_DAYS)
+      .filter(([date]) => date <= dateStr)
+      .map(([, num]) => num);
+    currentDayNumber = pastDays.length > 0 ? Math.max(...pastDays) : 0;
+  }
+
+  const completedDays = currentDayNumber;
+  const remainingDays = Math.max(0, totalInstructionalDays - completedDays);
+  const progressPercentage = parseFloat(((completedDays / totalInstructionalDays) * 100).toFixed(1));
+
+  // Find next upcoming holiday
+  const sortedHolidays = Object.entries(GEHU_OFFICIAL_HOLIDAYS)
+    .filter(([date]) => date >= dateStr)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  let nextHoliday: { name: string; date: string; daysAway: number } | undefined;
+  if (sortedHolidays.length > 0) {
+    const [hDate, hName] = sortedHolidays[0];
+    const diffDays = Math.ceil((new Date(hDate).getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+    nextHoliday = { name: hName, date: hDate, daysAway: diffDays };
+  }
+
+  // Find next exam block
+  const upcomingExams = GEHU_EXAM_PERIODS
+    .filter(e => e.start >= dateStr)
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  let nextExamBlock: { name: string; code: string; startDate: string; daysAway: number } | undefined;
+  if (upcomingExams.length > 0) {
+    const exam = upcomingExams[0];
+    const diffDays = Math.ceil((new Date(exam.start).getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+    nextExamBlock = { name: exam.name, code: exam.code, startDate: exam.start, daysAway: diffDays };
+  }
+
+  return {
+    totalInstructionalDays,
+    completedDays,
+    remainingDays,
+    currentDayNumber,
+    progressPercentage,
+    currentDate: dateStr,
+    isTodayWorkingDay: todayDetails.isWorkingDay,
+    todayLabel: todayDetails.label,
+    nextHoliday,
+    nextExamBlock,
+    lastTeachingDate: '2026-11-14'
+  };
+}
+
+export function countWorkingDaysBetween(startDateStr: string, endDateStr: string): number {
+  return Object.keys(GEHU_EXPLICIT_WORKING_DAYS).filter(d => d >= startDateStr && d <= endDateStr).length;
+}
+
+export function getAllOfficialGEHUHolidays(): { date: string; name: string }[] {
+  return Object.entries(GEHU_OFFICIAL_HOLIDAYS)
+    .map(([date, name]) => ({ date, name }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+

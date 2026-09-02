@@ -15,6 +15,7 @@ import {
   getAllEnrichedEvents, 
   getDaysUntilNextExam, 
   getUpcomingHolidays,
+  getSemesterWorkingDaysStats,
   AcademicCalendarEvent, 
   CalendarEventType
 } from '../engines/academicCalendarEngine';
@@ -40,6 +41,7 @@ export const AcademicCalendarView: React.FC<AcademicCalendarViewProps> = ({ onOp
   const enrichedEvents = getAllEnrichedEvents();
   const nextExamInfo = getDaysUntilNextExam();
   const upcomingHolidays = getUpcomingHolidays();
+  const workingDaysStats = getSemesterWorkingDaysStats();
 
   const handleSaveEvent = (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +88,73 @@ export const AcademicCalendarView: React.FC<AcademicCalendarViewProps> = ({ onOp
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
+      {/* Official GEHU Academic Calendar 90-Day Instructional Progress Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 backdrop-blur-xl shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white tracking-tight">Official GEHU Instructional Timeline</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  90 Working Days
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Semester Cycle: July 13 – November 14, 2026 (Excludes Sundays & Gazetted Holidays)</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-3 py-1 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+              Today: <strong className="text-indigo-300">{workingDaysStats.todayLabel}</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Visual Progress Bar */}
+        <div className="space-y-1.5 pt-1">
+          <div className="w-full h-2.5 bg-slate-800/90 rounded-full overflow-hidden p-0.5 border border-slate-700/40">
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-700 shadow-md shadow-indigo-500/30"
+              style={{ width: `${workingDaysStats.progressPercentage}%` }}
+            />
+          </div>
+          <div className="flex justify-between items-center text-[11px] text-slate-400 font-mono">
+            <span>Day 1 (July 13 Commencement)</span>
+            <span className="text-white font-bold bg-indigo-600/30 px-2 py-0.5 rounded-md border border-indigo-500/40">
+              Instructional Day {workingDaysStats.currentDayNumber} of 90 ({workingDaysStats.progressPercentage}% Completed)
+            </span>
+            <span>Day 90 (Nov 14 Final Teaching Day)</span>
+          </div>
+        </div>
+
+        {/* 4 Stats Pills */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Completed</span>
+            <strong className="text-sm font-mono font-bold text-white">{workingDaysStats.completedDays} Days</strong>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Remaining Classes</span>
+            <strong className="text-sm font-mono font-bold text-emerald-400">{workingDaysStats.remainingDays} Working Days</strong>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Next Holiday</span>
+            <strong className="text-xs font-semibold text-amber-300 truncate block">
+              {workingDaysStats.nextHoliday ? `${workingDaysStats.nextHoliday.name} (${workingDaysStats.nextHoliday.daysAway}d)` : 'None'}
+            </strong>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Next Exam Window</span>
+            <strong className="text-xs font-semibold text-indigo-300 truncate block">
+              {workingDaysStats.nextExamBlock ? `${workingDaysStats.nextExamBlock.code} (${workingDaysStats.nextExamBlock.daysAway}d)` : 'ESET Exams'}
+            </strong>
+          </div>
+        </div>
+      </div>
+
       {/* Top Banner & Highlights */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         

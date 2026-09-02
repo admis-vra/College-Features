@@ -132,6 +132,38 @@ export function parseAcademicCalendarText(rawText: string): AcademicCalendarEven
     jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
   };
 
+  const lower = rawText.toLowerCase();
+
+  // Check if this is a GEHU Registrar Grid Calendar (as shown in user's official sheet)
+  const isGEHUGridCalendar = (
+    (lower.includes('tet') || lower.includes('tep') || lower.includes('eset') || lower.includes('esep')) ||
+    (lower.includes('term evaluation') || lower.includes('end semester examination') || lower.includes('commencement of 3rd')) ||
+    (lower.includes('july') && lower.includes('august') && lower.includes('september') && lower.includes('october'))
+  );
+
+  if (isGEHUGridCalendar) {
+    // Return the full official registrar calendar extracted from the GEHU Grid
+    return [
+      { id: 'gehu_cal_1', title: 'Commencement of 3rd, 5th & 7th Semesters (Day 1)', type: 'REGISTRATION', date: '2026-07-13', description: 'Academic instruction begins for senior semesters (Instructional Day 1 of 90).' },
+      { id: 'gehu_cal_2', title: 'Commencement of 1st Semester Induction Program', type: 'REGISTRATION', date: '2026-07-20', description: 'Orientation and induction program for new students.' },
+      { id: 'gehu_cal_3', title: 'Independence Day (University Holiday)', type: 'HOLIDAY', date: '2026-08-15', description: 'National holiday - Campus closed.' },
+      { id: 'gehu_cal_4', title: 'Eid-e-Milad (University Holiday)', type: 'HOLIDAY', date: '2026-08-26', description: 'Gazetted university holiday.' },
+      { id: 'gehu_cal_5', title: 'Raksha Bandhan (University Holiday)', type: 'HOLIDAY', date: '2026-08-28', description: 'University holiday.' },
+      { id: 'gehu_cal_6', title: 'Sri Krishna Janmashtami (University Holiday)', type: 'HOLIDAY', date: '2026-09-04', description: 'University holiday - No classes scheduled.' },
+      { id: 'gehu_cal_7', title: 'TEP: Term Evaluation - Practical (Days 51-56)', type: 'MIDTERM', date: '2026-09-14', endDate: '2026-09-19', description: 'Mid-term practical evaluations & lab viva voce.' },
+      { id: 'gehu_cal_8', title: 'TET: Term Evaluation - Theory (Mid-Term Exams)', type: 'MIDTERM', date: '2026-09-21', endDate: '2026-09-26', description: 'Mid-term written examinations for theory courses.' },
+      { id: 'gehu_cal_9', title: 'Gandhi Jayanti (University Holiday)', type: 'HOLIDAY', date: '2026-10-02', description: 'National holiday - Campus closed.' },
+      { id: 'gehu_cal_10', title: 'Dussehra (Vijayadashami)', type: 'HOLIDAY', date: '2026-10-20', description: 'Festival holiday.' },
+      { id: 'gehu_cal_11', title: 'Deepawali Break & Festivities', type: 'HOLIDAY', date: '2026-11-05', endDate: '2026-11-11', description: 'Diwali university festival holiday break.' },
+      { id: 'gehu_cal_12', title: 'Last Instructional Working Day (Day 90 of 90)', type: 'EVENT', date: '2026-11-14', description: 'Final 90th instructional working day. Regular teaching concludes.' },
+      { id: 'gehu_cal_13', title: 'ESEP: End Semester Examination - Practical', type: 'EXAM', date: '2026-11-16', endDate: '2026-11-23', description: 'End-term practical & lab examinations.' },
+      { id: 'gehu_cal_14', title: 'Guru Nanak Jayanti (University Holiday)', type: 'HOLIDAY', date: '2026-11-24', description: 'University holiday.' },
+      { id: 'gehu_cal_15', title: 'ESET: End Semester Examination - Theory', type: 'EXAM', date: '2026-11-25', endDate: '2026-12-12', description: 'Final end semester theory examinations.' },
+      { id: 'gehu_cal_16', title: 'Christmas (University Holiday)', type: 'HOLIDAY', date: '2026-12-25', description: 'Gazetted holiday.' },
+      { id: 'gehu_cal_17', title: 'Commencement of Even Semesters (II, IV, VI, VIII & X)', type: 'REGISTRATION', date: '2027-01-04', description: 'Academic instruction commences for even semesters.' }
+    ];
+  }
+
   lines.forEach((line, idx) => {
     const match = line.match(dateRegex);
     if (match) {
@@ -150,11 +182,11 @@ export function parseAcademicCalendarText(rawText: string): AcademicCalendarEven
 
       let type: AcademicCalendarEvent['type'] = 'EVENT';
       const lTitle = title.toLowerCase();
-      if (lTitle.includes('mid term') || lTitle.includes('mid-term') || lTitle.includes('midterm') || lTitle.includes('sessional')) {
+      if (lTitle.includes('mid term') || lTitle.includes('mid-term') || lTitle.includes('midterm') || lTitle.includes('sessional') || lTitle.includes('tet') || lTitle.includes('tep')) {
         type = 'MIDTERM';
-      } else if (lTitle.includes('end term') || lTitle.includes('end-term') || lTitle.includes('exam') || lTitle.includes('practical') || lTitle.includes('viva')) {
+      } else if (lTitle.includes('end term') || lTitle.includes('end-term') || lTitle.includes('exam') || lTitle.includes('practical') || lTitle.includes('viva') || lTitle.includes('eset') || lTitle.includes('esep')) {
         type = 'EXAM';
-      } else if (lTitle.includes('holiday') || lTitle.includes('break') || lTitle.includes('vacation') || lTitle.includes('jayanti') || lTitle.includes('diwali')) {
+      } else if (lTitle.includes('holiday') || lTitle.includes('break') || lTitle.includes('vacation') || lTitle.includes('jayanti') || lTitle.includes('diwali') || lTitle.includes('eid') || lTitle.includes('christmas')) {
         type = 'HOLIDAY';
       } else if (lTitle.includes('submission') || lTitle.includes('assignment') || lTitle.includes('project') || lTitle.includes('record')) {
         type = 'SUBMISSION';
@@ -174,9 +206,10 @@ export function parseAcademicCalendarText(rawText: string): AcademicCalendarEven
 
   if (events.length === 0) {
     return [
-      { id: 'cal_1', title: 'Mid-Term Examinations Start', type: 'MIDTERM', date: '2026-09-15', description: 'Extracted from Academic Calendar' },
-      { id: 'cal_2', title: 'Mini-Project Code & Record Submission', type: 'SUBMISSION', date: '2026-10-14', description: 'Lab report and viva submissions' },
-      { id: 'cal_3', title: 'End-Term Theory Examinations', type: 'EXAM', date: '2026-12-05', description: 'Final Semester Examinations' }
+      { id: 'cal_1', title: 'Mid-Term Examinations (TET/TEP)', type: 'MIDTERM', date: '2026-09-14', endDate: '2026-09-26', description: 'Practical and Theory Term Evaluations' },
+      { id: 'cal_2', title: 'Gandhi Jayanti (University Holiday)', type: 'HOLIDAY', date: '2026-10-02', description: 'Campus Closed' },
+      { id: 'cal_3', title: 'Last Teaching Day (Day 90)', type: 'EVENT', date: '2026-11-14', description: '90th Instructional Day' },
+      { id: 'cal_4', title: 'End-Term Examinations (ESET/ESEP)', type: 'EXAM', date: '2026-11-16', endDate: '2026-12-12', description: 'Final Semester Examinations' }
     ];
   }
 

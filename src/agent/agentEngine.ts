@@ -34,14 +34,17 @@ import {
   simulateAttendanceScenario, 
   calculateOverallAttendance, 
   findMatchingSubject,
-  saveStudentSubjects
+  saveStudentSubjects,
+  calculateSemesterAttendanceProjection
 } from '../engines/attendanceEngine';
 
 import {
   getExamSchedule,
   getDaysUntilNextExam,
   getUpcomingHolidays,
-  mergeImportedEvents
+  mergeImportedEvents,
+  getSemesterWorkingDaysStats,
+  getGEHUDayDetails
 } from '../engines/academicCalendarEngine';
 
 import {
@@ -64,7 +67,10 @@ export interface AgentResponse {
       | 'calendar_events'
       | 'exam_countdown'
       | 'ocr_attachment_result'
-      | 'daily_planner';
+      | 'daily_planner'
+      | 'working_days_stats'
+      | 'holidays_list'
+      | 'semester_attendance_forecast';
     title: string;
     data: any;
   };
@@ -400,6 +406,94 @@ export async function runAgenticAI(
   const floorMatch = clean.match(/(\d+)(?:st|nd|rd|th)?\s*floor/i);
   if (floorMatch) {
     floorFilter = parseInt(floorMatch[1], 10);
+  }
+
+  // =============================================================
+  // ACTION 0: GEHU WORKING DAYS & SEMESTER INSTRUCTIONAL TIMELINE
+  // =============================================================
+  if (
+    clean.includes("working day") || 
+    clean.includes("instructional day") || 
+    clean.includes("teaching day") || 
+    clean.includes("how many days left") || 
+    clean.includes("days left in semester") || 
+    clean.includes("when does semester end") ||
+    clean.includes("semester progress") ||
+    clean.includes("working days")
+  ) {
+    const stats = getSemesterWorkingDaysStats();
+    return {
+      toolUsed: 'GEHUWorkingDaysTool',
+      text: `📅 **GEHU Academic Calendar & Working Days Status**:\n\n` +
+            `• **Total Instructional Days:** **${stats.totalInstructionalDays} Days** (July 13 – Nov 14, 2026)\n` +
+            `• **Current Progress:** Day **${stats.currentDayNumber}** of ${stats.totalInstructionalDays} (**${stats.progressPercentage}%** completed)\n` +
+            `• **Remaining Instructional Days:** **${stats.remainingDays} Working Days** left\n` +
+            `• **Today's Status:** ${stats.todayLabel}\n` +
+            (stats.nextHoliday ? `• **Next University Holiday:** **${stats.nextHoliday.name}** on ${stats.nextHoliday.date} (${stats.nextHoliday.daysAway} days away)\n` : '') +
+            (stats.nextExamBlock ? `• **Next Examination Window:** **${stats.nextExamBlock.name} (${stats.nextExamBlock.code})** starting ${stats.nextExamBlock.startDate} (${stats.nextExamBlock.daysAway} days away)\n` : '') +
+            `• **Last Teaching Day:** **Nov 14, 2026** (Day 90)\n\n` +
+            `💡 *Working days exclude Sundays and gazetted registrar holidays. Use these ${stats.remainingDays} remaining days to maintain your mandatory 75% attendance.*`,
+      widget: {
+        type: 'working_days_stats',
+        title: 'Semester Instructional Timeline',
+        data: stats
+      }
+    };
+  }
+
+  // =============================================================
+  // ACTION 0.5: SEMESTER ATTENDANCE FEASIBILITY & FORECAST (75% RULE)
+  // =============================================================
+  if (
+    (clean.includes("75") && (clean.includes("reach") || clean.includes("get") || clean.includes("can i") || clean.includes("make") || clean.includes("possible") || clean.includes("feasible"))) ||
+    clean.includes("forecast") ||
+    clean.includes("semester attendance") ||
+    (clean.includes("attendance") && (clean.includes("semester") || clean.includes("left") || clean.includes("end") || clean.includes("projection")))
+  ) {
+    const subjects = loadStudentSubjects();
+    const targetSubject = findMatchingSubject(clean, subjects) || subjects[0];
+    
+    if (targetSubject) {
+      const projection = calculateSemesterAttendanceProjection(targetSubject);
+      return {
+        toolUsed: 'AttendanceForecastTool',
+        text: `📊 **Semester Attendance Feasibility Forecast**:\n\n` +
+              `🎯 **Subject:** **${projection.subjectName}**\n` +
+              `• **Current Attendance:** **${projection.currentPercentage}%** (${projection.currentAttended}/${projection.currentTotal} classes)\n` +
+              `• **Remaining Semester Working Days:** **${projection.remainingWorkingDays} Days**\n` +
+              `• **Estimated Remaining Lectures:** **~${projection.estimatedRemainingLectures} Classes**\n` +
+              `• **Max Achievable Attendance:** **${projection.maxAchievablePercentage}%** (if attending 100% of remaining classes)\n` +
+              `• **Classes Needed for ${projection.targetPercentage}%:** **${projection.minClassesToAttendFor75} classes**\n` +
+              `• **Allowable Safe Bunks:** **${projection.maxBunksAllowedAcrossSemester} class(es)**\n\n` +
+              `📋 **Verdict:** ${projection.summaryAdvice}`,
+        widget: {
+          type: 'semester_attendance_forecast',
+          title: `Semester Forecast: ${projection.subjectName}`,
+          data: projection
+        }
+      };
+    }
+  }
+
+  // Check specific Tomorrow queries
+  if (clean.includes("tomorrow") && (clean.includes("holiday") || clean.includes("off") || clean.includes("working day") || clean.includes("class"))) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const y = tomorrow.getFullYear();
+    const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const d = String(tomorrow.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+    const dayInfo = getGEHUDayDetails(dateStr);
+
+    return {
+      toolUsed: 'AcademicCalendarTool',
+      text: `🗓️ **Schedule for Tomorrow (${dayInfo.dayName}, ${dateStr})**:\n\n` +
+            `• **Status:** **${dayInfo.label}**\n` +
+            (dayInfo.isHoliday ? `🎉 **Yes! Tomorrow is a university holiday (${dayInfo.holidayName}).** Campus and all lectures are closed.\n` : '') +
+            (dayInfo.isWorkingDay ? `🏫 **Tomorrow is an active instructional working day (Day ${dayInfo.workingDayNumber} of 90).** Regular classes and lab sessions will be conducted.\n` : '') +
+            (!dayInfo.isWorkingDay && !dayInfo.isHoliday ? `🏖️ **Tomorrow is ${dayInfo.label}.** Regular teaching is not scheduled.\n` : '') +
+            `\n💡 *Verified against official GEHU Academic Calendar.*`
+    };
   }
 
   // =============================================================

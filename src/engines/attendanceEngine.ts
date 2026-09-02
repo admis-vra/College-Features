@@ -312,3 +312,87 @@ export function findMatchingSubject(query: string, subjects: AttendanceSubject[]
 
   return undefined;
 }
+
+// -------------------------------------------------------------
+// SEMESTER-LEVEL ATTENDANCE PROJECTION (GEHU WORKING DAYS)
+// -------------------------------------------------------------
+import { getSemesterWorkingDaysStats } from './academicCalendarEngine';
+
+export interface SemesterAttendanceProjection {
+  subjectName: string;
+  currentAttended: number;
+  currentTotal: number;
+  currentPercentage: number;
+  targetPercentage: number;
+  remainingWorkingDays: number;
+  estimatedRemainingLectures: number;
+  maxAchievablePercentage: number;
+  minClassesToAttendFor75: number;
+  maxBunksAllowedAcrossSemester: number;
+  is75Achievable: boolean;
+  statusVerdict: 'COMFORTABLY_SAFE' | 'ACHIEVABLE_WITH_REGULARITY' | 'CRITICAL_MUST_ATTEND_ALL' | 'MATHEMATICALLY_IMPOSSIBLE';
+  summaryAdvice: string;
+}
+
+export function calculateSemesterAttendanceProjection(
+  subject: AttendanceSubject,
+  lecturesPerWeek: number = 4
+): SemesterAttendanceProjection {
+  const stats = getSemesterWorkingDaysStats();
+  const remainingWorkingDays = stats.remainingDays; // e.g. 48
+
+  // Calculate remaining weeks (approx 6 working days per week in GEHU timetable)
+  const remainingWeeks = Math.max(0.5, remainingWorkingDays / 6);
+  const estimatedRemainingLectures = Math.max(1, Math.round(remainingWeeks * lecturesPerWeek));
+
+  const targetRatio = (subject.targetPercentage || 75) / 100;
+  const finalProjectedTotal = subject.total + estimatedRemainingLectures;
+
+  // 1. Max Achievable Percentage (if attends 100% of remaining lectures)
+  const maxAttended = subject.attended + estimatedRemainingLectures;
+  const maxAchievablePercentage = parseFloat(((maxAttended / finalProjectedTotal) * 100).toFixed(1));
+
+  // 2. Minimum total attended needed by end of semester to stay >= 75%
+  const requiredTotalAttended = Math.ceil(finalProjectedTotal * targetRatio);
+  const minClassesToAttendFor75 = Math.max(0, requiredTotalAttended - subject.attended);
+
+  // 3. Max bunks allowable out of remaining classes
+  const maxBunksAllowedAcrossSemester = Math.max(0, estimatedRemainingLectures - minClassesToAttendFor75);
+
+  // 4. Feasibility Check
+  const is75Achievable = minClassesToAttendFor75 <= estimatedRemainingLectures;
+
+  let statusVerdict: SemesterAttendanceProjection['statusVerdict'] = 'COMFORTABLY_SAFE';
+  let summaryAdvice = '';
+
+  if (!is75Achievable) {
+    statusVerdict = 'MATHEMATICALLY_IMPOSSIBLE';
+    summaryAdvice = `⚠️ Even if you attend all ${estimatedRemainingLectures} remaining classes, your maximum attendance will reach ${maxAchievablePercentage}% (short of ${subject.targetPercentage}%). Speak with your course coordinator.`;
+  } else if (minClassesToAttendFor75 === estimatedRemainingLectures) {
+    statusVerdict = 'CRITICAL_MUST_ATTEND_ALL';
+    summaryAdvice = `🚨 Zero margin for error: You MUST attend all ${estimatedRemainingLectures} remaining classes to reach ${subject.targetPercentage}%. No more bunks allowed this semester.`;
+  } else if (maxBunksAllowedAcrossSemester <= 2) {
+    statusVerdict = 'ACHIEVABLE_WITH_REGULARITY';
+    summaryAdvice = `⚡ Tight balance: You must attend at least ${minClassesToAttendFor75} out of ${estimatedRemainingLectures} remaining classes. You have only ${maxBunksAllowedAcrossSemester} safe bunk(s) left.`;
+  } else {
+    statusVerdict = 'COMFORTABLY_SAFE';
+    summaryAdvice = `✅ Good standing: Out of ${estimatedRemainingLectures} remaining classes, you need to attend ${minClassesToAttendFor75}. You can safely skip up to ${maxBunksAllowedAcrossSemester} classes across the rest of the semester.`;
+  }
+
+  return {
+    subjectName: subject.name,
+    currentAttended: subject.attended,
+    currentTotal: subject.total,
+    currentPercentage: parseFloat(((subject.attended / (subject.total || 1)) * 100).toFixed(1)),
+    targetPercentage: subject.targetPercentage || 75,
+    remainingWorkingDays,
+    estimatedRemainingLectures,
+    maxAchievablePercentage,
+    minClassesToAttendFor75,
+    maxBunksAllowedAcrossSemester,
+    is75Achievable,
+    statusVerdict,
+    summaryAdvice
+  };
+}
+
