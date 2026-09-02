@@ -4,7 +4,7 @@
 ### *Intelligent Student Operating System for Graphic Era Hill University*
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20Site-6366f1?style=for-the-badge&logo=vercel&logoColor=white)](https://college-features-for-gehu-only.vercel.app)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/admis-vra/College-Features-for-GEHU-only-)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/admis-vra/College-Features)
 [![React](https://img.shields.io/badge/React%2018-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript%205-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
@@ -142,7 +142,7 @@ Make sure you have the following installed on your machine:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/admis-vra/College-Features-for-GEHU-only-.git
+git clone https://github.com/admis-vra/College-Features.git
 cd College-Features-for-GEHU-only-
 ```
 
@@ -224,7 +224,7 @@ npm run preview
    git push origin main
    ```
 2. Log in to [Vercel](https://vercel.com/) and click **"Add New Project"**.
-3. Import your `College-Features-for-GEHU-only-` repository.
+3. Import your `College-Features` repository.
 4. Add the environment variable:
    * `OPENROUTER_API_KEY` = `your_openrouter_api_key` *(optional, for cloud AI)*
 5. Click **Deploy**. Vercel will build the React Vite app and configure the `/api/chat.ts` serverless route.
