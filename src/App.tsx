@@ -293,7 +293,7 @@ export default function App() {
             </div>
           </div>
           <div>
-            <span className="font-extrabold text-base text-white tracking-tight">CampusOS</span>
+            <span className="font-extrabold text-base text-white tracking-tight">College Feature</span>
             <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
               AI v2.0
             </span>
@@ -377,7 +377,7 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-black text-lg text-white tracking-tight">CampusOS</span>
+                <span className="font-black text-lg text-white tracking-tight">College Feature</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   AI v2.0
                 </span>

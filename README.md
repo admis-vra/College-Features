@@ -1,7 +1,7 @@
 <div align="center">
 
-# 🏫 CampusOS — GEHU College Companion & AI Assistant
-### *Intelligent Student Operating System for Graphic Era Hill University*
+# 🏫 College Feature — GEHU College Companion & AI Assistant
+### *Intelligent Student Dashboard for Graphic Era Hill University*
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20Site-6366f1?style=for-the-badge&logo=vercel&logoColor=white)](https://college-features-for-gehu-only.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/admis-vra/College-Features)
@@ -26,7 +26,7 @@
 
 Navigating university schedules, tracking mandatory 75% attendance limits, finding empty study rooms between lectures, and preparing for mid-term exams are everyday challenges for students.
 
-**CampusOS (College Features for GEHU)** combines all these essentials into an intuitive, high-performance web dashboard:
+**College Feature (for GEHU)** combines all these essentials into an intuitive, high-performance web dashboard:
 - **Instant Classroom Vacancy Search**: Locate open classrooms, lecture theatres (LT), or computer labs for study sessions, club meetings, or project work.
 - **Autonomous AI Campus Assistant**: Ask plain-English questions, receive dynamic UI widgets, or paste screenshots directly into chat.
 - **Attendance Lab & Bunk Calculator**: Know exactly how many classes you can safely skip or must attend to preserve GEHU's 75% criteria.
