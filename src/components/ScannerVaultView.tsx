@@ -242,7 +242,7 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
               Screenshot & Document AI Vault
             </h1>
             <p className="text-slate-300 text-sm md:text-base max-w-2xl leading-relaxed">
-              Upload or paste screenshots of your <strong className="text-indigo-300">ERP Attendance</strong>, <strong className="text-purple-300">Academic Calendar</strong>, or <strong className="text-emerald-300">Timetable</strong>. Our autonomous OCR engine parses tables, dates, and subjects and immediately attaches them to your AI assistant.
+              Upload or paste screenshots of your <strong className="text-indigo-300">ERP Attendance</strong> dashboard. Our autonomous OCR engine parses subjects, attended/conducted counts, and percentages so you can review, edit, and sync immediately.
             </p>
             {storageQuota && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
@@ -258,14 +258,7 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
               className="px-4 py-2.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold rounded-xl transition-all shadow-sm hover:scale-105 active:scale-95 flex items-center gap-2"
             >
               <Zap className="w-3.5 h-3.5 text-indigo-400" />
-              Sample ERP Attendance
-            </button>
-            <button
-              onClick={() => handleLoadPreset('ACADEMIC_CALENDAR')}
-              className="px-4 py-2.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-semibold rounded-xl transition-all shadow-sm hover:scale-105 active:scale-95 flex items-center gap-2"
-            >
-              <Calendar className="w-3.5 h-3.5 text-purple-400" />
-              Sample Academic Calendar
+              Load Sample ERP Attendance
             </button>
           </div>
         </div>
@@ -284,13 +277,11 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
 
             {/* Target Category Selector */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400">Document Type Target</label>
+              <label className="text-xs font-medium text-slate-400">Document Target</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: 'AUTO_DETECT', label: 'Auto-Detect' },
-                  { id: 'ERP_ATTENDANCE', label: 'ERP Attendance' },
-                  { id: 'ACADEMIC_CALENDAR', label: 'Academic Calendar' },
-                  { id: 'TIMETABLE', label: 'Class Timetable' }
+                  { id: 'ERP_ATTENDANCE', label: 'ERP Attendance' }
                 ].map(opt => (
                   <button
                     key={opt.id}

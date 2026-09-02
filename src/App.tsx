@@ -2,10 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   Bot, 
   Send, 
-  Calendar as CalendarIcon, 
-  Clock, 
   Search, 
-  CheckCircle, 
+  CheckCircle,
   Sparkles, 
   Menu, 
   X, 
@@ -15,17 +13,11 @@ import {
   TrendingUp, 
   Paperclip, 
   Camera, 
-  Flame, 
   Cpu
 } from 'lucide-react';
 import { 
-  getAllClassrooms, 
   findFreeClassrooms, 
-  getRoomPeriods, 
-  getRoomSchedule, 
   runAgenticAI, 
-  FreePeriod, 
-  ClassSchedule, 
   AgentResponse, 
   WEEKDAYS 
 } from './agent/agentEngine';
@@ -35,16 +27,9 @@ import {
   calculateSubjectMetrics,
   calculateOverallAttendance,
   AttendanceSubject,
-  SubjectAttendanceMetrics,
-  getDailyCheckInStatus,
-  recordDailyClassAttendance,
-  undoDailyClassAttendance
+  SubjectAttendanceMetrics
 } from './engines/attendanceEngine';
-import {
-  getDaysUntilNextExam
-} from './engines/academicCalendarEngine';
 import { ScannerVaultView } from './components/ScannerVaultView';
-import { AcademicCalendarView } from './components/AcademicCalendarView';
 import { OCRDocType, fileToBase64 } from './engines/ocrEngine';
 
 interface Message {
@@ -57,11 +42,8 @@ interface Message {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'scan' | 'calendar' | 'attendance' | 'find' | 'timeline'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'scan' | 'attendance' | 'find'>('chat');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  
-  // Timetable lists
-  const classrooms = getAllClassrooms();
 
   // Attendance Lab States
   const [studentSubjects, setStudentSubjects] = useState<AttendanceSubject[]>(() => loadStudentSubjects());
@@ -85,25 +67,19 @@ export default function App() {
     saveStudentSubjects(newList);
   };
 
-  // Daily Class Attendance Check-In (Calendar Working Days)
-  const [checkInDate, setCheckInDate] = useState<string>(() => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  });
-
-  const dailyCheckIn = getDailyCheckInStatus(checkInDate);
-
-  const handleMarkDailyAttendance = (subjectId: string, status: 'PRESENT' | 'ABSENT' | 'CANCELLED') => {
-    recordDailyClassAttendance(checkInDate, subjectId, status);
-    setStudentSubjects(loadStudentSubjects());
-  };
-
-  const handleUndoDailyAttendance = (subjectId: string) => {
-    undoDailyClassAttendance(checkInDate, subjectId);
-    setStudentSubjects(loadStudentSubjects());
+  // Quick manual attendance increment (+1 Present or +1 Absent) anytime!
+  const handleQuickUpdate = (id: string, type: 'ATTENDED' | 'MISSED') => {
+    const updated = studentSubjects.map(s => {
+      if (s.id === id) {
+        if (type === 'ATTENDED') {
+          return { ...s, attended: s.attended + 1, total: s.total + 1 };
+        } else {
+          return { ...s, total: s.total + 1 };
+        }
+      }
+      return s;
+    });
+    updateSubjectsList(updated);
   };
 
   // Chat States
@@ -111,7 +87,7 @@ export default function App() {
     {
       id: 'welcome',
       sender: 'bot',
-      text: "👋 Hi! I'm your GEHU AI Campus Assistant.\n\nI combine classroom intelligence, daily timetables, attendance calculations, and academic calendar countdowns.\n\n💡 **Try asking or pasting a screenshot:**\n• \"What is my overall attendance?\"\n• \"Can I skip tomorrow's class in Python?\"\n• \"When is my next exam?\"\n• \"Which classrooms are free right now?\"\n• *Paste or upload an ERP screenshot anytime!*",
+      text: "👋 Hi! I'm your GEHU AI Campus Assistant.\n\nI provide instant classroom availability, attendance safety analytics, and multimodal OCR document extraction.\n\n💡 **Try asking or pasting a screenshot:**\n• \"What is my overall attendance?\"\n• \"Can I bunk my next class in C++?\"\n• \"How many classes to reach 75% in DBMS?\"\n• \"Which classrooms are free right now?\"\n• *Paste or upload an ERP screenshot anytime!*",
       timestamp: new Date()
     }
   ]);
@@ -132,31 +108,12 @@ export default function App() {
   const [findResults, setFindResults] = useState<string[]>([]);
   const [searchedFind, setSearchedFind] = useState(false);
 
-  // Timeline / Schedule states
-  const [selectedRoom, setSelectedRoom] = useState(classrooms[0] || '');
-  const [timelineDate, setTimelineDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-  const [roomPeriods, setRoomPeriods] = useState<FreePeriod[]>([]);
-  const [roomSchedule, setRoomSchedule] = useState<ClassSchedule[]>([]);
-
-  // Next Exam Info for Top Header Badge
-  const nextExamInfo = getDaysUntilNextExam();
-
   // Auto-scroll chat smoothly inside container
   useEffect(() => {
     if (messageContainerRef.current) {
       messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
-
-  // Set initial timeline views
-  useEffect(() => {
-    if (selectedRoom) {
-      handleQueryRoomDetails();
-    }
-  }, [selectedRoom, timelineDate]);
 
   // Clipboard Paste Support for Screenshots in Chat
   useEffect(() => {
@@ -190,14 +147,6 @@ export default function App() {
     const date = new Date(dateStr);
     const day = date.getDay();
     return WEEKDAYS[day === 0 ? 6 : day - 1];
-  };
-
-  const handleQueryRoomDetails = () => {
-    const day = getWeekday(timelineDate);
-    const periods = getRoomPeriods(selectedRoom, day);
-    const sched = getRoomSchedule(selectedRoom, day);
-    setRoomPeriods(periods);
-    setRoomSchedule(sched);
   };
 
   const handleUseCurrentTime = () => {
@@ -381,10 +330,8 @@ export default function App() {
           {[
             { id: 'chat', label: 'AI Assistant', icon: Bot },
             { id: 'scan', label: 'Smart OCR Scanner', icon: Camera, badge: 'New' },
-            { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon, badge: nextExamInfo.nextExam ? `${nextExamInfo.days}d` : undefined },
             { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
-            { id: 'find', label: 'Vacant Rooms', icon: Search },
-            { id: 'timeline', label: 'Room Schedule', icon: Clock }
+            { id: 'find', label: 'Vacant Rooms', icon: Search }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -447,10 +394,8 @@ export default function App() {
             {[
               { id: 'chat', label: 'AI Assistant', icon: Bot },
               { id: 'scan', label: 'Smart OCR Scanner', icon: Camera, badge: 'New' },
-              { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon, badge: nextExamInfo.nextExam ? `${nextExamInfo.days}d` : undefined },
               { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
-              { id: 'find', label: 'Vacant Rooms', icon: Search },
-              { id: 'timeline', label: 'Room Schedule', icon: Clock }
+              { id: 'find', label: 'Vacant Rooms', icon: Search }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -508,23 +453,6 @@ export default function App() {
               <span className="text-indigo-400 group-hover:underline">Manage →</span>
             </div>
           </div>
-
-          {/* Exam Countdown Widget */}
-          {nextExamInfo.nextExam && (
-            <div
-              onClick={() => setActiveTab('calendar')}
-              className="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-900/40 hover:border-indigo-500/40 cursor-pointer transition-all flex items-center justify-between"
-            >
-              <div>
-                <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Next Examination</div>
-                <div className="text-xs font-bold text-white truncate max-w-[120px]">{nextExamInfo.nextExam.title}</div>
-              </div>
-              <div className="text-right">
-                <span className="text-base font-black text-indigo-300 font-mono">{nextExamInfo.days}</span>
-                <span className="text-[10px] text-slate-400 block -mt-1">days left</span>
-              </div>
-            </div>
-          )}
 
           {/* System Ready Tag */}
           <div className="px-2 pt-1 flex items-center justify-between text-[10px] text-slate-500">
@@ -627,12 +555,6 @@ export default function App() {
                               >
                                 View in Attendance Lab →
                               </button>
-                              <button
-                                onClick={() => setActiveTab('calendar')}
-                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
-                              >
-                                View Calendar →
-                              </button>
                             </div>
                           </div>
                         )}
@@ -651,79 +573,6 @@ export default function App() {
                                 </span>
                               ))}
                             </div>
-                          </div>
-                        )}
-
-                        {/* Widget: Exam Countdown */}
-                        {msg.widget.type === 'exam_countdown' && (
-                          <div className="p-4 rounded-2xl bg-indigo-950/50 border border-indigo-500/40 flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                              <div className="text-[10px] font-bold uppercase text-amber-400 flex items-center gap-1">
-                                <Flame className="w-3 h-3" />
-                                Next Exam Milestone
-                              </div>
-                              <h4 className="text-sm font-bold text-white">{msg.widget.data.nextExam?.title}</h4>
-                              <p className="text-xs text-slate-400">{msg.widget.data.nextExam?.formattedDate}</p>
-                            </div>
-                            <div className="text-center px-4 py-2 bg-indigo-600/30 rounded-xl border border-indigo-500/40">
-                              <div className="text-xl font-black text-indigo-300 font-mono">
-                                {msg.widget.data.daysRemaining === 0 ? 'TODAY' : `${msg.widget.data.daysRemaining}d`}
-                              </div>
-                              <div className="text-[9px] uppercase text-slate-400 font-bold">Countdown</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Widget: GEHU Working Days Stats */}
-                        {msg.widget.type === 'working_days_stats' && (
-                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-indigo-500/40 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <CalendarIcon className="w-4 h-4 text-indigo-400" />
-                                <span className="text-xs font-bold text-white uppercase tracking-wider">{msg.widget.title}</span>
-                              </div>
-                              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold">
-                                {msg.widget.data.progressPercentage}% Completed
-                              </span>
-                            </div>
-
-                            {/* Working Day Progress Bar */}
-                            <div className="space-y-1">
-                              <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-500"
-                                  style={{ width: `${msg.widget.data.progressPercentage}%` }}
-                                />
-                              </div>
-                              <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                                <span>Day 1 (July 13)</span>
-                                <span className="text-white font-bold">Day {msg.widget.data.currentDayNumber} of 90</span>
-                                <span>Day 90 (Nov 14)</span>
-                              </div>
-                            </div>
-
-                            {/* Quick Stats Grid */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
-                                <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
-                                <div className="text-sm font-bold text-emerald-400 font-mono">{msg.widget.data.remainingDays} Days</div>
-                              </div>
-                              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
-                                <div className="text-[10px] text-slate-400 uppercase">Next Holiday</div>
-                                <div className="text-xs font-semibold text-amber-300 truncate">{msg.widget.data.nextHoliday?.name || 'None'}</div>
-                              </div>
-                              <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
-                                <div className="text-[10px] text-slate-400 uppercase">Next Exam</div>
-                                <div className="text-xs font-semibold text-indigo-300 truncate">{msg.widget.data.nextExamBlock?.code || 'ESET'}</div>
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={() => setActiveTab('calendar')}
-                              className="w-full mt-1 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold rounded-xl transition-all"
-                            >
-                              Explore Complete GEHU Calendar & Datesheet →
-                            </button>
                           </div>
                         )}
 
@@ -827,12 +676,11 @@ export default function App() {
             {/* Quick Prompt Suggestions */}
             <div className="px-4 sm:px-6 py-2.5 bg-slate-950/50 border-t border-slate-800/60 overflow-x-auto flex gap-2">
               {[
-                "Did I attend classes today?",
-                "How many working days left?",
-                "Can I reach 75% in C++?",
-                "Is tomorrow a holiday?",
-                "Is any classroom empty right now?",
-                "Plan my day"
+                "What is my overall attendance?",
+                "Can I bunk class in C++?",
+                "How many classes to reach 75% in DBMS?",
+                "Which subject has my lowest attendance?",
+                "Is any classroom empty right now?"
               ].map((sugg, i) => (
                 <button
                   key={i}
@@ -919,14 +767,7 @@ export default function App() {
         )}
 
         {/* ======================================================== */}
-        {/* TAB 3: ACADEMIC CALENDAR & EXAMS */}
-        {/* ======================================================== */}
-        {activeTab === 'calendar' && (
-          <AcademicCalendarView onOpenScanner={() => setActiveTab('scan')} />
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 4: ATTENDANCE LAB & SIMULATOR */}
+        {/* TAB 3: ATTENDANCE LAB & SIMULATOR */}
         {/* ======================================================== */}
         {activeTab === 'attendance' && (
           <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
@@ -962,137 +803,6 @@ export default function App() {
                   Add Subject
                 </button>
               </div>
-            </div>
-
-            {/* Daily Class Attendance Check-In Card (Linked to Academic Calendar) */}
-            <div className="bg-slate-900/90 border border-indigo-500/40 rounded-3xl p-6 backdrop-blur-xl shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                    <CheckCircle className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-white tracking-tight">Daily Class Attendance Check-In</h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        Live Sync
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400">
-                      Linked to Academic Calendar: {dailyCheckIn.isWorkingDay ? `Instructional Day ${dailyCheckIn.workingDayNumber} of 90 (${dailyCheckIn.dayName})` : dailyCheckIn.isHoliday ? `Holiday: ${dailyCheckIn.holidayName}` : 'Non-Instructional Day'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Date Picker for Check-In */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">Date:</span>
-                  <input
-                    type="date"
-                    value={checkInDate}
-                    onChange={(e) => setCheckInDate(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {dailyCheckIn.isHoliday ? (
-                <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-center gap-3 text-amber-200 text-xs">
-                  <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
-                  <div>
-                    <strong>Official University Holiday: {dailyCheckIn.holidayName}</strong>
-                    <p className="text-amber-300/80 mt-0.5">Classes are suspended according to the registrar calendar. No attendance check-in is required today.</p>
-                  </div>
-                </div>
-              ) : !dailyCheckIn.isWorkingDay ? (
-                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs">
-                  ☕ <strong>{dailyCheckIn.dayName} (Weekly Off)</strong>: No scheduled instructional classes today.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-                    <span>Did you attend your lectures on this date? Select your status:</span>
-                    <span className="text-indigo-400 font-mono">
-                      {dailyCheckIn.subjects.filter(s => s.isLogged).length} of {dailyCheckIn.subjects.length} Logged
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {dailyCheckIn.subjects.map((subItem) => {
-                      const isLogged = subItem.isLogged;
-                      const status = subItem.status;
-
-                      return (
-                        <div
-                          key={subItem.subject.id}
-                          className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col justify-between gap-3 hover:border-slate-700 transition-all"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-xs font-bold text-white">{subItem.subject.name}</div>
-                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                                Current: <strong className="text-slate-200">{subItem.subject.attended}/{subItem.subject.total}</strong> ({((subItem.subject.attended / (subItem.subject.total || 1)) * 100).toFixed(1)}%)
-                              </div>
-                            </div>
-                            {isLogged && (
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                status === 'PRESENT' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                                status === 'ABSENT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
-                                'bg-slate-800 text-slate-300'
-                              }`}>
-                                {status === 'PRESENT' ? '✅ Attended' : status === 'ABSENT' ? '❌ Absent' : '⏸️ Cancelled'}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'PRESENT')}
-                              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                                status === 'PRESENT'
-                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                                  : 'bg-emerald-950/30 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-500/30'
-                              }`}
-                            >
-                              Attended (+1)
-                            </button>
-                            <button
-                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'ABSENT')}
-                              className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                                status === 'ABSENT'
-                                  ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                                  : 'bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 border border-rose-500/30'
-                              }`}
-                            >
-                              Skipped (+0)
-                            </button>
-                            <button
-                              onClick={() => handleMarkDailyAttendance(subItem.subject.id, 'CANCELLED')}
-                              className={`py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all ${
-                                status === 'CANCELLED'
-                                  ? 'bg-slate-700 text-white'
-                                  : 'bg-slate-800/80 hover:bg-slate-800 text-slate-400'
-                              }`}
-                              title="Class was cancelled by teacher/college"
-                            >
-                              Off
-                            </button>
-                            {isLogged && (
-                              <button
-                                onClick={() => handleUndoDailyAttendance(subItem.subject.id)}
-                                className="py-1.5 px-2 rounded-xl text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                                title="Reset check-in"
-                              >
-                                ↺
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Subject Cards Grid */}
@@ -1136,16 +846,36 @@ export default function App() {
                             setIsEditingSubject(true);
                           }}
                           className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
+                          title="Edit Subject"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteSubject(m.subject.id)}
                           className="p-2 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-300 rounded-xl"
+                          title="Delete Subject"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
+                    </div>
+
+                    {/* Quick 1-Click Update Anytime */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                      <button
+                        onClick={() => handleQuickUpdate(m.subject.id, 'ATTENDED')}
+                        className="flex-1 py-1.5 px-2 bg-emerald-600/20 hover:bg-emerald-600 border border-emerald-500/40 text-emerald-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1"
+                        title="Attended lecture (+1 to attended, +1 to total)"
+                      >
+                        +1 Attended
+                      </button>
+                      <button
+                        onClick={() => handleQuickUpdate(m.subject.id, 'MISSED')}
+                        className="flex-1 py-1.5 px-2 bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1"
+                        title="Missed lecture (+1 to total)"
+                      >
+                        +1 Missed
+                      </button>
                     </div>
                   </div>
                 );
@@ -1155,7 +885,7 @@ export default function App() {
         )}
 
         {/* ======================================================== */}
-        {/* TAB 5: VACANT CLASSROOM FINDER */}
+        {/* TAB 4: VACANT CLASSROOM FINDER */}
         {/* ======================================================== */}
         {activeTab === 'find' && (
           <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
@@ -1237,80 +967,6 @@ export default function App() {
                     {findResults.map((r, i) => (
                       <div key={i} className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-xs font-bold text-indigo-300">
                         {r}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 6: ROOM TIMELINE & SCHEDULE */}
-        {/* ======================================================== */}
-        {activeTab === 'timeline' && (
-          <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-xl shadow-xl space-y-6">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-indigo-400" />
-                  Room Schedule & Day Timeline
-                </h2>
-                
-                <div className="flex items-center gap-3">
-                  <input
-                    type="date"
-                    value={timelineDate}
-                    onChange={(e) => setTimelineDate(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                  <select
-                    value={selectedRoom}
-                    onChange={(e) => setSelectedRoom(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  >
-                    {classrooms.map((r, i) => (
-                      <option key={i} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Room Schedule Periods */}
-              <div className="space-y-3">
-                {roomPeriods.map((p, i) => (
-                  <div
-                    key={i}
-                    className={`p-4 rounded-2xl border flex items-center justify-between ${
-                      p.status === 'FREE' ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-950/60 border-slate-800 text-slate-200'
-                    }`}
-                  >
-                    <div>
-                      <div className="text-xs font-bold font-mono">{p.start} - {p.end}</div>
-                      {p.subject && <div className="text-xs font-semibold text-white mt-1">{p.subject} ({p.course})</div>}
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${
-                      p.status === 'FREE' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'
-                    }`}>
-                      {p.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Detailed Scheduled Lectures if any */}
-              {roomSchedule.length > 0 && (
-                <div className="pt-4 border-t border-slate-800 space-y-2">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Scheduled Lecture Details ({roomSchedule.length})
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {roomSchedule.map((s, idx) => (
-                      <div key={idx} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
-                        <div className="font-semibold text-white">{s.subject}</div>
-                        <div className="text-indigo-300 mt-1 font-mono">{s.startTime} - {s.endTime}</div>
-                        <div className="text-slate-400 mt-0.5">{s.course} ({s.section})</div>
                       </div>
                     ))}
                   </div>
