@@ -2,65 +2,102 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   Bot, 
   Send, 
-  Calendar, 
+  Calendar as CalendarIcon, 
   Clock, 
   Search, 
-  MapPin, 
   CheckCircle, 
-  XCircle, 
-  BookOpen, 
-  SlidersHorizontal, 
-  Compass, 
-  MessageSquare, 
   Sparkles, 
-  HelpCircle, 
-  ChevronRight,
-  Zap,
-  Menu,
-  X
+  Menu, 
+  X, 
+  Plus, 
+  Trash2, 
+  Edit3, 
+  TrendingUp, 
+  Paperclip, 
+  Camera, 
+  Flame, 
+  Cpu
 } from 'lucide-react';
 import { 
   getAllClassrooms, 
   findFreeClassrooms, 
   getRoomPeriods, 
   getRoomSchedule, 
-  runAgenticAI,
-  timeToMinutes,
+  runAgenticAI, 
   FreePeriod, 
-  ClassSchedule,
-  AgentResponse,
-  WEEKDAYS
+  ClassSchedule, 
+  AgentResponse, 
+  WEEKDAYS 
 } from './agent/agentEngine';
+import {
+  loadStudentSubjects,
+  saveStudentSubjects,
+  calculateSubjectMetrics,
+  calculateOverallAttendance,
+  AttendanceSubject,
+  SubjectAttendanceMetrics
+} from './engines/attendanceEngine';
+import {
+  getDaysUntilNextExam
+} from './engines/academicCalendarEngine';
+import { ScannerVaultView } from './components/ScannerVaultView';
+import { AcademicCalendarView } from './components/AcademicCalendarView';
+import { OCRDocType, fileToBase64 } from './engines/ocrEngine';
 
 interface Message {
   id: string;
   sender: 'user' | 'bot';
   text: string;
   timestamp: Date;
+  imagePreview?: string;
   widget?: AgentResponse['widget'];
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'find' | 'timeline' | 'schedule'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'scan' | 'calendar' | 'attendance' | 'find' | 'timeline'>('chat');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   
   // Timetable lists
   const classrooms = getAllClassrooms();
+
+  // Attendance Lab States
+  const [studentSubjects, setStudentSubjects] = useState<AttendanceSubject[]>(() => loadStudentSubjects());
+  const [isEditingSubject, setIsEditingSubject] = useState<boolean>(false);
+  const [editingSubject, setEditingSubject] = useState<AttendanceSubject>({
+    id: '',
+    name: '',
+    code: '',
+    attended: 0,
+    total: 0,
+    targetPercentage: 75
+  });
+
+  // Calculate live overall attendance
+  const overallMetrics = calculateOverallAttendance(studentSubjects);
+  const subjectMetricsList: SubjectAttendanceMetrics[] = studentSubjects.map(s => calculateSubjectMetrics(s));
+
+  // Persist subjects on change
+  const updateSubjectsList = (newList: AttendanceSubject[]) => {
+    setStudentSubjects(newList);
+    saveStudentSubjects(newList);
+  };
 
   // Chat States
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'bot',
-      text: "👋 Hi! I'm your GEHU Autonomous Classroom Agent.\n\nI run 100% in-browser with zero API keys or rate limits. You can ask me anything about classrooms, vacancies, or section routines:\n\n• \"Which classrooms (CR) are free right now?\"\n• \"What class is going on in room 124 right now?\"\n• \"Show me Section A's timetable on Monday.\"\n• \"Which CR rooms are free tomorrow at 10 AM?\"\n• \"Give me campus stats and total rooms.\"",
+      text: "👋 Hi! I'm your GEHU AI Campus Assistant.\n\nI combine classroom intelligence, daily timetables, attendance calculations, and academic calendar countdowns.\n\n💡 **Try asking or pasting a screenshot:**\n• \"What is my overall attendance?\"\n• \"Can I skip tomorrow's class in Python?\"\n• \"When is my next exam?\"\n• \"Which classrooms are free right now?\"\n• *Paste or upload an ERP screenshot anytime!*",
       timestamp: new Date()
     }
   ]);
   const [inputVal, setInputVal] = useState('');
+  const [attachedImage, setAttachedImage] = useState<{ base64: string; docType: OCRDocType; name: string } | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const messageContainerRef = useRef<HTMLDivElement>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Manual Tab states
+  // Manual Tab states (Vacant room finder)
   const [findDate, setFindDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -80,6 +117,9 @@ export default function App() {
   const [roomPeriods, setRoomPeriods] = useState<FreePeriod[]>([]);
   const [roomSchedule, setRoomSchedule] = useState<ClassSchedule[]>([]);
 
+  // Next Exam Info for Top Header Badge
+  const nextExamInfo = getDaysUntilNextExam();
+
   // Auto-scroll chat smoothly inside container
   useEffect(() => {
     if (messageContainerRef.current) {
@@ -93,6 +133,33 @@ export default function App() {
       handleQueryRoomDetails();
     }
   }, [selectedRoom, timelineDate]);
+
+  // Clipboard Paste Support for Screenshots in Chat
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (activeTab !== 'chat') return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const base64 = await fileToBase64(blob);
+            setAttachedImage({
+              base64,
+              docType: 'AUTO_DETECT',
+              name: 'Pasted Screenshot.png'
+            });
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [activeTab]);
 
   const getWeekday = (dateStr: string) => {
     if (!dateStr) return 'Monday';
@@ -147,28 +214,54 @@ export default function App() {
     setSearchedFind(true);
   };
 
-  const handleChatSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputVal.trim()) return;
+  // Chat Image File Picker
+  const handleChatFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    const userText = inputVal;
+    const base64 = await fileToBase64(file);
+    setAttachedImage({
+      base64,
+      docType: 'AUTO_DETECT',
+      name: file.name
+    });
+  };
+
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputVal.trim() && !attachedImage) return;
+
+    const userText = inputVal || (attachedImage ? `Analyze and attach this document screenshot: ${attachedImage.name}` : '');
+    const currentAttachment = attachedImage;
+
     setInputVal('');
+    setAttachedImage(null);
 
     const userMsgId = Date.now().toString();
     setMessages(prev => [...prev, {
       id: userMsgId,
       sender: 'user',
       text: userText,
+      imagePreview: currentAttachment?.base64,
       timestamp: new Date()
     }]);
 
     setIsTyping(true);
 
-    // Fast autonomous agent execution
-    setTimeout(() => {
-      const agentResult = runAgenticAI(userText);
-      const botMsgId = (Date.now() + 1).toString();
+    try {
+      const agentResult = await runAgenticAI(
+        userText,
+        currentAttachment ? {
+          dataUrl: currentAttachment.base64,
+          docType: currentAttachment.docType,
+          name: currentAttachment.name
+        } : undefined
+      );
 
+      // Refresh student subjects if OCR updated them
+      setStudentSubjects(loadStudentSubjects());
+
+      const botMsgId = (Date.now() + 1).toString();
       setIsTyping(false);
       setMessages(prev => [...prev, {
         id: botMsgId,
@@ -177,755 +270,759 @@ export default function App() {
         timestamp: new Date(),
         widget: agentResult.widget
       }]);
-    }, 150);
+    } catch (err: any) {
+      setIsTyping(false);
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        sender: 'bot',
+        text: `⚠️ An error occurred while processing your request: ${err.message || err}`,
+        timestamp: new Date()
+      }]);
+    }
   };
 
   const handleSuggestionClick = (query: string) => {
     setInputVal(query);
   };
 
-  const hoursList = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-  const minutesList = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+  const handleSaveSubjectModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSubject.name.trim()) return;
 
-  const navItems = [
-    { id: 'chat' as const, label: 'AI Agent', icon: MessageSquare, badge: 'Active' },
-    { id: 'find' as const, label: 'Find Rooms', icon: Search },
-    { id: 'timeline' as const, label: 'Timeline', icon: Clock },
-    { id: 'schedule' as const, label: 'Schedules', icon: Calendar }
-  ];
+    if (editingSubject.id) {
+      const updated = studentSubjects.map(s => s.id === editingSubject.id ? editingSubject : s);
+      updateSubjectsList(updated);
+    } else {
+      const newSub: AttendanceSubject = {
+        ...editingSubject,
+        id: `sub_${Date.now()}`
+      };
+      updateSubjectsList([...studentSubjects, newSub]);
+    }
+
+    setIsEditingSubject(false);
+  };
+
+  const handleDeleteSubject = (id: string) => {
+    const updated = studentSubjects.filter(s => s.id !== id);
+    updateSubjectsList(updated);
+  };
 
   return (
-    <div className="flex h-[100dvh] max-h-[100dvh] bg-slate-950 text-slate-100 font-sans overflow-hidden relative selection:bg-indigo-500/30">
-      {/* Decorative Ambient Neon Background Glows */}
-      <div className="absolute top-[-15%] left-[-10%] w-[60%] sm:w-[45%] h-[45%] bg-indigo-600/15 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-[-15%] right-[-10%] w-[60%] sm:w-[45%] h-[45%] bg-purple-600/15 rounded-full blur-[140px] pointer-events-none" />
-
-      {/* ========================================================================= */}
-      {/* DESKTOP SIDEBAR (Visible on md and above) */}
-      {/* ========================================================================= */}
-      <aside className="hidden md:flex w-72 lg:w-80 bg-slate-900/60 backdrop-blur-xl border-r border-slate-800/40 flex-col justify-between shrink-0 z-20 shadow-[8px_0_32px_-12px_rgba(0,0,0,0.5)]">
-        <div>
-          {/* Brand Header */}
-          <div className="p-6 border-b border-slate-800/40 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 border border-indigo-400/20 transform hover:scale-105 transition duration-300">
-              <Compass className="w-6 h-6 text-white" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      
+      {/* Top Main Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          
+          {/* Logo & Brand */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/20">
+              <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-indigo-400" />
+              </div>
             </div>
             <div>
-              <h1 className="font-extrabold text-base lg:text-lg leading-tight tracking-wide bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">GEHU ClassFinder</h1>
-              <span className="text-[10px] text-indigo-400 font-black tracking-widest uppercase flex items-center gap-1 mt-0.5">
-                <Zap className="w-3 h-3 fill-indigo-400 text-indigo-400" /> Autonomous Agent
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-lg text-white tracking-tight">CampusOS</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  AI v2.0
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 hidden sm:block">Intelligent Student Operating System</p>
             </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="p-4 space-y-1.5">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
+          {/* Desktop Navigation Tabs */}
+          <nav className="hidden lg:flex items-center gap-1 bg-slate-950/60 p-1.5 rounded-2xl border border-slate-800/80">
+            {[
+              { id: 'chat', label: 'AI Assistant', icon: Bot },
+              { id: 'scan', label: 'Smart OCR Scanner', icon: Camera, badge: 'New' },
+              { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon, badge: nextExamInfo.nextExam ? `${nextExamInfo.days}d` : undefined },
+              { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
+              { id: 'find', label: 'Vacant Rooms', icon: Search },
+              { id: 'timeline', label: 'Room Schedule', icon: Clock }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
               return (
-                <button 
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl transition-all duration-200 border ${
-                    isActive 
-                      ? 'bg-indigo-600/15 border-indigo-500/30 text-indigo-300 font-bold shadow-inner' 
-                      : 'border-transparent text-slate-400 hover:bg-slate-800/40 hover:text-slate-200 font-medium'
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`relative px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <Icon className="w-5 h-5 shrink-0" />
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="ml-auto text-[9px] bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow">
-                      {item.badge}
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                  {tab.badge && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-indigo-500/30 text-indigo-300'
+                    }`}>
+                      {tab.badge}
                     </span>
                   )}
                 </button>
               );
             })}
           </nav>
-        </div>
 
-        {/* Footer info card */}
-        <div className="p-4 border-t border-slate-800/40 space-y-3">
-          <div className="bg-slate-950/50 rounded-2xl p-4 border border-slate-800/30 shadow-[0_8px_32px_0_rgba(0,0,0,0.2)]">
-            <div className="flex items-center gap-2 mb-1.5">
-              <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-              <span className="text-xs font-bold text-slate-200">100% In-Browser Engine</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed font-medium">
-              Zero external API keys or rate limits. All 72+ rooms & 168+ subjects are processed in memory.
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      {/* ========================================================================= */}
-      {/* MOBILE SLIDE-OUT DRAWER BACKDROP & DRAWER (Visible when open on mobile) */}
-      {/* ========================================================================= */}
-      {mobileDrawerOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 md:hidden transition-opacity duration-300"
-          onClick={() => setMobileDrawerOpen(false)}
-        >
-          <div 
-            className="w-72 max-w-[80vw] h-full bg-slate-900/95 border-r border-slate-800 p-6 flex flex-col justify-between shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div>
-              <div className="flex items-center justify-between pb-6 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md">
-                    <Compass className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="font-extrabold text-sm text-slate-100">GEHU ClassFinder</h2>
-                    <span className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider">Mobile Hub</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setMobileDrawerOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <nav className="py-4 space-y-2">
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button 
-                      key={item.id}
-                      onClick={() => {
-                        setActiveTab(item.id);
-                        setMobileDrawerOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm transition-all border ${
-                        isActive 
-                          ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 font-bold' 
-                          : 'border-transparent text-slate-400 hover:bg-slate-800/40 text-slate-200'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5 shrink-0" />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-
-            <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/40 text-[11px] text-slate-400">
-              <div className="font-bold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zero Latency</span>
-              </div>
-              Runs completely offline on your device.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MAIN VIEWPORT CONTAINER */}
-      {/* ========================================================================= */}
-      <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-transparent z-10 h-full overflow-hidden">
-        
-        {/* Top Navbar */}
-        <header className="h-14 sm:h-16 border-b border-slate-800/40 flex items-center justify-between px-4 sm:px-8 bg-slate-900/40 backdrop-blur-xl shrink-0 z-20">
-          <div className="flex items-center gap-2.5">
-            {/* Mobile Menu Hamburger */}
-            <button 
-              onClick={() => setMobileDrawerOpen(true)}
-              className="p-2 rounded-xl text-slate-300 hover:bg-slate-800/60 md:hidden border border-slate-800"
-              aria-label="Open menu"
+          {/* Right Header Stats & Mobile Toggle */}
+          <div className="flex items-center gap-3">
+            {/* Live Overall Attendance Pill */}
+            <div 
+              onClick={() => setActiveTab('attendance')}
+              className="cursor-pointer hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/80 hover:border-indigo-500/40 transition-colors"
             >
-              <Menu className="w-5 h-5" />
+              <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
+                overallMetrics.overallPercentage >= 75 ? 'bg-emerald-400' : 'bg-red-400'
+              }`} />
+              <div className="text-xs">
+                <span className="text-slate-400">Attendance: </span>
+                <strong className="text-white font-mono">{overallMetrics.overallPercentage}%</strong>
+              </div>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+            >
+              {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-
-            <div className="flex items-center gap-2 text-xs">
-              <span className="hidden sm:inline text-slate-500 font-semibold uppercase tracking-wider">Dashboard</span>
-              <ChevronRight className="hidden sm:inline w-3.5 h-3.5 text-slate-700" />
-              <span className="text-indigo-400 font-extrabold uppercase tracking-widest text-xs sm:text-sm">
-                {activeTab === 'chat' ? 'AI Assistant' : activeTab === 'find' ? 'Vacant Rooms' : activeTab === 'timeline' ? 'Room Timeline' : 'Class Schedules'}
-              </span>
-            </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="px-2.5 sm:px-3.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black tracking-wider uppercase rounded-full flex items-center gap-1.5 shadow-sm">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-              <span className="hidden xs:inline">Agent</span> Active
-            </div>
+        {/* Mobile Navigation Drawer */}
+        {mobileDrawerOpen && (
+          <div className="lg:hidden bg-slate-900 border-b border-slate-800 px-4 py-3 space-y-1 animate-fadeIn">
+            {[
+              { id: 'chat', label: 'AI Assistant', icon: Bot },
+              { id: 'scan', label: 'Smart OCR Scanner', icon: Camera },
+              { id: 'calendar', label: 'Academic Calendar', icon: CalendarIcon },
+              { id: 'attendance', label: 'Attendance Lab', icon: TrendingUp },
+              { id: 'find', label: 'Vacant Rooms', icon: Search },
+              { id: 'timeline', label: 'Room Schedule', icon: Clock }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    setMobileDrawerOpen(false);
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                    isActive
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </header>
+        )}
+      </header>
 
-        {/* Dynamic Panels Content Wrapper */}
-        <div className={`flex-1 min-h-0 p-2.5 sm:p-6 md:p-8 flex flex-col ${activeTab === 'chat' ? 'pb-20 md:pb-6 overflow-hidden' : 'pb-24 md:pb-8 overflow-y-auto'}`}>
-          
-          {/* ========================================================================= */}
-          {/* TAB 1: AI Chat Assistant */}
-          {/* ========================================================================= */}
-          {activeTab === 'chat' && (
-            <div className="flex-1 min-h-0 max-w-4xl w-full mx-auto flex flex-col rounded-2xl sm:rounded-3xl border border-slate-800/50 bg-slate-900/40 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.4)] overflow-hidden">
-              
-              {/* Chat Messages scroll area */}
-              <div ref={messageContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
-                {messages.map((msg) => (
-                  <div 
-                    key={msg.id}
-                    className={`flex gap-2.5 sm:gap-4 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    {msg.sender === 'bot' && (
-                      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20 border border-indigo-400/25 mt-0.5">
-                        <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                      </div>
-                    )}
-                    
-                    <div className="space-y-2.5 sm:space-y-3 max-w-[92%] sm:max-w-[85%]">
-                      <div className={`p-3 sm:p-4 rounded-2xl text-xs sm:text-sm leading-relaxed ${
-                        msg.sender === 'user' 
-                          ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-tr-none shadow-lg shadow-indigo-500/10 border border-indigo-500/20 font-medium' 
-                          : 'bg-slate-900/90 border border-slate-800 rounded-tl-none text-slate-200 whitespace-pre-line shadow-md font-medium'
-                      }`}>
-                        {msg.text}
-                      </div>
+      {/* Main App Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        
+        {/* ======================================================== */}
+        {/* TAB 1: AI CHAT ASSISTANT (PRIMARY INTERFACE) */}
+        {/* ======================================================== */}
+        {activeTab === 'chat' && (
+          <div className="max-w-5xl mx-auto h-[calc(100vh-10rem)] flex flex-col bg-slate-900/80 border border-slate-800 rounded-3xl backdrop-blur-xl shadow-2xl overflow-hidden animate-fadeIn">
+            
+            {/* Chat Top Banner */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    Campus AI Operating Assistant
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  </h2>
+                  <p className="text-[11px] text-slate-400">Deterministic Schedule, Attendance & OCR Extraction Engine</p>
+                </div>
+              </div>
 
-                      {/* Interactive Widget attached to message */}
-                      {msg.widget && (
-                        <div className="bg-slate-950/80 backdrop-blur rounded-2xl p-3.5 sm:p-5 border border-slate-800/70 shadow-inner space-y-3 sm:space-y-4">
-                          <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2 pb-2 border-b border-slate-800/80">
-                            <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                            {msg.widget.title}
-                          </h4>
+              <button
+                onClick={() => setActiveTab('scan')}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-200 text-xs font-semibold rounded-xl transition-all"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                Open OCR Scanner Vault
+              </button>
+            </div>
 
-                          {/* Free Rooms Widget */}
-                          {msg.widget.type === 'free_rooms' && (
-                            <div>
-                              {msg.widget.data.rooms.length > 0 ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-2.5 max-h-56 sm:max-h-64 overflow-y-auto pr-1">
-                                  {msg.widget.data.rooms.map((room: string, i: number) => {
-                                    const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : room.toUpperCase().includes('AUDI') ? 'AUDI' : 'CR';
-                                    return (
-                                      <div key={i} className="bg-slate-900/80 border border-slate-800/70 px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-xl flex items-center justify-between hover:scale-[1.02] hover:border-slate-700/50 hover:bg-slate-900 transition-all duration-200 shadow-sm">
-                                        <span className="font-bold text-slate-200 text-xs truncate max-w-[70%]">{room}</span>
-                                        <span className={`text-[9px] px-2 py-0.5 rounded font-black tracking-wide shrink-0 ${
-                                          type === 'LAB' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/25' : 
-                                          type === 'LT' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25' : 
-                                          type === 'AUDI' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25' :
-                                          'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-                                        }`}>{type}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="text-xs text-rose-400 font-semibold flex items-center gap-2">
-                                  <XCircle className="w-4 h-4 shrink-0" /> No vacant classrooms found for this block.
-                                </p>
-                              )}
-                            </div>
-                          )}
+            {/* Chat Message Scrollable Container */}
+            <div ref={messageContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex gap-3 max-w-3xl ${
+                    msg.sender === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                  }`}
+                >
+                  {/* Avatar */}
+                  <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-xs font-bold ${
+                    msg.sender === 'user'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'bg-slate-800 text-indigo-400 border border-slate-700'
+                  }`}>
+                    {msg.sender === 'user' ? 'You' : <Bot className="w-4 h-4" />}
+                  </div>
 
-                          {/* Room Periods Widget */}
-                          {msg.widget.type === 'room_periods' && (
-                            <div className="space-y-2 max-h-60 sm:max-h-64 overflow-y-auto pr-1">
-                              {msg.widget.data.periods.map((p: FreePeriod, i: number) => (
-                                <div key={i} className={`flex items-center justify-between p-3 sm:px-4 sm:py-3.5 rounded-xl text-xs transition-all border ${
-                                  p.status === 'FREE' 
-                                    ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-300' 
-                                    : 'bg-rose-950/20 border-rose-500/20 text-rose-300'
-                                }`}>
-                                  <div>
-                                    <span className="font-black text-xs sm:text-sm block">{p.start} - {p.end}</span>
-                                    {p.subject && <div className="text-[10px] text-slate-400 mt-0.5 font-semibold line-clamp-1">{p.subject} ({p.course})</div>}
-                                  </div>
-                                  <span className={`font-black text-[9px] tracking-widest uppercase px-2 py-1 rounded-md shrink-0 ml-2 ${
-                                    p.status === 'FREE' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
-                                  }`}>{p.status}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Room Schedule & Section Schedule Widget */}
-                          {(msg.widget.type === 'room_schedule' || msg.widget.type === 'section_schedule') && (
-                            <div className="space-y-2 max-h-60 sm:max-h-64 overflow-y-auto pr-1">
-                              {msg.widget.data.schedule.length > 0 ? (
-                                msg.widget.data.schedule.map((s: ClassSchedule, i: number) => (
-                                  <div key={i} className="bg-slate-900/80 border border-slate-800/80 p-3 sm:p-4 rounded-xl text-xs space-y-1">
-                                    <div className="flex justify-between font-black text-slate-200 text-xs sm:text-sm">
-                                      <span>{s.startTime} - {s.endTime}</span>
-                                      <span className="text-indigo-400 font-bold truncate max-w-[45%] text-right">{s.course}</span>
-                                    </div>
-                                    <div className="text-slate-400 text-[11px] font-semibold">{s.subject} {s.section ? `(Sec: ${s.section}, Sem: ${s.semester})` : ''}</div>
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="text-xs text-emerald-400 font-semibold flex items-center gap-2">
-                                  <CheckCircle className="w-4 h-4" /> No classes scheduled.
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Current Status Card Widget */}
-                          {msg.widget.type === 'current_status' && (
-                            <div className="bg-slate-900/90 border border-indigo-500/30 p-3.5 sm:p-4 rounded-xl space-y-2 shadow-lg">
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs font-bold text-slate-300">Active Session</span>
-                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">In Progress</span>
-                              </div>
-                              <div className="font-extrabold text-xs sm:text-sm text-slate-100">{msg.widget.data.subject}</div>
-                              <div className="text-xs text-indigo-400 font-semibold">{msg.widget.data.course} • Section {msg.widget.data.section} (Sem {msg.widget.data.semester})</div>
-                              <div className="text-[11px] text-slate-400 font-medium pt-1.5 border-t border-slate-800">
-                                Lecture Window: <strong>{msg.widget.data.startTime} - {msg.widget.data.endTime}</strong>
-                              </div>
-                            </div>
-                          )}
+                  {/* Message Bubble */}
+                  <div className="space-y-3 max-w-2xl">
+                    <div className={`p-4 rounded-3xl text-xs md:text-sm leading-relaxed ${
+                      msg.sender === 'user'
+                        ? 'bg-indigo-600 text-white rounded-tr-none shadow-lg shadow-indigo-900/30'
+                        : 'bg-slate-950/70 border border-slate-800 text-slate-200 rounded-tl-none shadow-md'
+                    }`}>
+                      {/* Attached Image Preview in User Bubble */}
+                      {msg.imagePreview && (
+                        <div className="mb-3 rounded-2xl overflow-hidden border border-indigo-400/40 max-h-48 max-w-sm">
+                          <img src={msg.imagePreview} alt="Uploaded screenshot" className="w-full object-cover" />
                         </div>
                       )}
-                    </div>
-                  </div>
-                ))}
-
-                {isTyping && (
-                  <div className="flex gap-3 items-center text-slate-400 text-xs italic pl-2">
-                    <Bot className="w-4 h-4 text-indigo-400 animate-spin" />
-                    <span>Agent analyzing timetable graph...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Chat Input Bar */}
-              <div className="p-3 sm:p-4 border-t border-slate-800/40 bg-slate-900/70 backdrop-blur-xl shrink-0">
-                {/* Suggestions pill panel */}
-                <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-2.5 sm:mb-3">
-                  <button 
-                    onClick={() => handleSuggestionClick("Which classrooms are free right now?")}
-                    className="text-[11px] sm:text-xs font-semibold bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/90 px-2.5 sm:px-3.5 py-1.5 rounded-xl transition duration-200"
-                  >
-                    🏫 Free CRs right now?
-                  </button>
-                  <button 
-                    onClick={() => handleSuggestionClick("What class is going on in room 124 right now?")}
-                    className="text-[11px] sm:text-xs font-semibold bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/90 px-2.5 sm:px-3.5 py-1.5 rounded-xl transition duration-200"
-                  >
-                    🔍 What class in 124?
-                  </button>
-                  <button 
-                    onClick={() => handleSuggestionClick("Show me Section A's timetable on Monday")}
-                    className="text-[11px] sm:text-xs font-semibold bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/90 px-2.5 sm:px-3.5 py-1.5 rounded-xl transition duration-200"
-                  >
-                    🎓 Section A Routine
-                  </button>
-                  <button 
-                    onClick={() => handleSuggestionClick("Campus stats and total rooms")}
-                    className="text-[11px] sm:text-xs font-semibold bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-800/90 px-2.5 sm:px-3.5 py-1.5 rounded-xl transition duration-200"
-                  >
-                    📊 Campus Stats
-                  </button>
-                </div>
-
-                <form onSubmit={handleChatSubmit} className="flex gap-2 sm:gap-3">
-                  <input
-                    type="text"
-                    value={inputVal}
-                    onChange={(e) => setInputVal(e.target.value)}
-                    placeholder="Ask any question about rooms, classes..."
-                    className="flex-1 bg-slate-950/90 border border-slate-800 rounded-xl px-3.5 sm:px-4 py-2.5 sm:py-3.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-slate-200 placeholder-slate-600 transition shadow-inner font-medium"
-                  />
-                  <button 
-                    type="submit"
-                    aria-label="Send message"
-                    className="bg-gradient-to-tr from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-4 sm:px-6 rounded-xl transition duration-200 flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-indigo-400/20"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* ========================================================================= */}
-          {/* TAB 2: Find Vacant Classrooms */}
-          {/* ========================================================================= */}
-          {activeTab === 'find' && (
-            <div className="max-w-4xl w-full mx-auto space-y-4 sm:space-y-6">
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
-                <h2 className="text-base sm:text-lg font-extrabold mb-4 sm:mb-5 flex items-center gap-2 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-                  <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400" />
-                  Vacant Room Filters
-                </h2>
-
-                <form onSubmit={handleFindSubmit} className="space-y-4 sm:space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    {/* Date select */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Date</label>
-                      <input 
-                        type="date" 
-                        value={findDate}
-                        onChange={(e) => setFindDate(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-medium"
-                        required
-                      />
+                      
+                      <div className="whitespace-pre-wrap font-sans">{msg.text}</div>
                     </div>
 
-                    {/* Start Time Selection */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Start Time</label>
-                      <select 
-                        value={findStart}
-                        onChange={(e) => setFindStart(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                      >
-                        {hoursList.flatMap(h => minutesList.flatMap(m => ['AM', 'PM'].map(ampm => {
-                          const val = `${h.toString().padStart(2, '0')}:${m} ${ampm}`;
-                          return <option key={val} value={val}>{val}</option>;
-                        })))}
-                      </select>
-                    </div>
-
-                    {/* End Time Selection */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">End Time</label>
-                      <select 
-                        value={findEnd}
-                        onChange={(e) => setFindEnd(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                      >
-                        {hoursList.flatMap(h => minutesList.flatMap(m => ['AM', 'PM'].map(ampm => {
-                          const val = `${h.toString().padStart(2, '0')}:${m} ${ampm}`;
-                          return <option key={val} value={val}>{val}</option>;
-                        })))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Room Type Selector */}
-                  <div className="pt-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Filter Layout</label>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-                      {(['CR', 'ALL', 'LT', 'LAB'] as const).map(t => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setFindType(t)}
-                          className={`px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition duration-200 border text-center ${
-                            findType === t 
-                              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/15 border-indigo-400/20' 
-                              : 'bg-slate-950/80 border-slate-800/80 hover:bg-slate-800/40 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          {t === 'CR' ? 'Classrooms (CR)' : t === 'ALL' ? 'All Layouts' : t === 'LT' ? 'Lecture Theatres' : 'Laboratories'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div className="pt-2 flex flex-col sm:flex-row gap-2.5 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={handleUseCurrentTime}
-                      className="px-4 py-3 border border-slate-800 hover:bg-slate-800/40 rounded-xl text-xs sm:text-sm font-bold transition duration-200 text-center"
-                    >
-                      Use Current Time
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-extrabold py-3 rounded-xl transition duration-200 shadow-lg shadow-indigo-500/15 border border-indigo-400/20 text-xs sm:text-sm"
-                    >
-                      Search Vacant Rooms
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Results view */}
-              {searchedFind && (
-                <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/50">
-                    <h3 className="font-extrabold text-slate-200 text-xs sm:text-sm tracking-wide">
-                      {getWeekday(findDate)} ({findStart} - {findEnd})
-                    </h3>
-                    <span className="text-[11px] sm:text-xs bg-indigo-500/15 text-indigo-300 font-black px-3 py-1 rounded-full border border-indigo-500/20">
-                      {findResults.length} Vacant
-                    </span>
-                  </div>
-
-                  {findResults.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5">
-                      {findResults.map((room, i) => {
-                        const type = room.toUpperCase().includes('LAB') ? 'LAB' : room.toUpperCase().includes('LT') ? 'LT' : room.toUpperCase().includes('AUDI') ? 'AUDI' : 'CR';
-                        return (
-                          <div key={i} className="bg-slate-950/70 border border-slate-800/60 hover:border-indigo-500/30 p-3 sm:p-4 rounded-xl sm:rounded-2xl hover:scale-[1.02] transition-all duration-200 flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-2.5 sm:gap-3 truncate pr-2">
-                              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-500/15">
-                                <MapPin className="w-4 h-4 text-indigo-400" />
-                              </div>
-                              <span className="font-extrabold text-slate-200 text-xs sm:text-sm truncate">{room}</span>
+                    {/* Interactive Agent Widgets */}
+                    {msg.widget && (
+                      <div className="animate-fadeIn">
+                        {/* Widget: OCR Attachment Result */}
+                        {msg.widget.type === 'ocr_attachment_result' && (
+                          <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                Synchronized to Local Knowledge Base
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/30 text-indigo-200 font-mono">
+                                Auto-Attached
+                              </span>
                             </div>
-                            <span className={`text-[9px] px-2 py-0.5 rounded font-black tracking-widest shrink-0 ${
-                              type === 'LAB' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/25' : 
-                              type === 'LT' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25' : 
-                              type === 'AUDI' ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25' :
-                              'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-                            }`}>{type}</span>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => setActiveTab('attendance')}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/30"
+                              >
+                                View in Attendance Lab →
+                              </button>
+                              <button
+                                onClick={() => setActiveTab('calendar')}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
+                              >
+                                View Calendar →
+                              </button>
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 sm:py-16 bg-slate-950/20 rounded-2xl border border-dashed border-slate-800">
-                      <HelpCircle className="w-10 h-10 sm:w-12 sm:h-12 text-slate-700 mx-auto mb-2 sm:mb-3" />
-                      <p className="text-slate-400 text-xs sm:text-sm font-semibold">No classrooms are vacant for the selected preferences.</p>
-                    </div>
-                  )}
+                        )}
+
+                        {/* Widget: Free Rooms */}
+                        {msg.widget.type === 'free_rooms' && (
+                          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
+                            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                              <Search className="w-3.5 h-3.5 text-indigo-400" />
+                              {msg.widget.title}
+                            </h4>
+                            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-1">
+                              {msg.widget.data.rooms.map((room: string, i: number) => (
+                                <span key={i} className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs font-semibold text-white">
+                                  {room}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Widget: Exam Countdown */}
+                        {msg.widget.type === 'exam_countdown' && (
+                          <div className="p-4 rounded-2xl bg-indigo-950/50 border border-indigo-500/40 flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="text-[10px] font-bold uppercase text-amber-400 flex items-center gap-1">
+                                <Flame className="w-3 h-3" />
+                                Next Exam Milestone
+                              </div>
+                              <h4 className="text-sm font-bold text-white">{msg.widget.data.nextExam?.title}</h4>
+                              <p className="text-xs text-slate-400">{msg.widget.data.nextExam?.formattedDate}</p>
+                            </div>
+                            <div className="text-center px-4 py-2 bg-indigo-600/30 rounded-xl border border-indigo-500/40">
+                              <div className="text-xl font-black text-indigo-300 font-mono">
+                                {msg.widget.data.daysRemaining === 0 ? 'TODAY' : `${msg.widget.data.daysRemaining}d`}
+                              </div>
+                              <div className="text-[9px] uppercase text-slate-400 font-bold">Countdown</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {isTyping && (
+                <div className="flex gap-3 mr-auto items-center text-xs text-slate-400 bg-slate-950/60 p-3 rounded-2xl border border-slate-800 w-fit animate-pulse">
+                  <Cpu className="w-4 h-4 text-indigo-400 animate-spin" />
+                  <span>Agent is executing deterministic tools & querying database...</span>
                 </div>
               )}
             </div>
-          )}
 
-          {/* ========================================================================= */}
-          {/* TAB 3: Visual Timeline */}
-          {/* ========================================================================= */}
-          {activeTab === 'timeline' && (
-            <div className="max-w-4xl w-full mx-auto space-y-4 sm:space-y-6">
-              {/* Select Options card */}
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Classroom</label>
-                    <select
-                      value={selectedRoom}
-                      onChange={(e) => setSelectedRoom(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                    >
-                      {classrooms.map(room => (
-                        <option key={room} value={room}>{room}</option>
-                      ))}
-                    </select>
-                  </div>
+            {/* Quick Prompt Suggestions */}
+            <div className="px-4 sm:px-6 py-2.5 bg-slate-950/50 border-t border-slate-800/60 overflow-x-auto flex gap-2">
+              {[
+                "Is any classroom empty right now?",
+                "What is my overall attendance?",
+                "Can I skip tomorrow's class?",
+                "When is my next exam?",
+                "Which subject has my lowest attendance?",
+                "Plan my day"
+              ].map((sugg, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSuggestionClick(sugg)}
+                  className="px-3 py-1 bg-slate-800/60 hover:bg-indigo-600/30 hover:border-indigo-500/40 border border-slate-700/60 text-slate-300 text-xs rounded-full whitespace-nowrap transition-all"
+                >
+                  {sugg}
+                </button>
+              ))}
+            </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Date</label>
-                    <input 
-                      type="date" 
-                      value={timelineDate}
-                      onChange={(e) => setTimelineDate(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                      required
-                    />
+            {/* Chat Input & Screenshot Attachment Bar */}
+            <form onSubmit={handleChatSubmit} className="p-4 bg-slate-950 border-t border-slate-800 space-y-3">
+              
+              {/* Image Preview Chip if Attached */}
+              {attachedImage && (
+                <div className="flex items-center gap-3 p-2 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 w-fit animate-fadeIn">
+                  <img src={attachedImage.base64} alt="preview" className="w-10 h-10 object-cover rounded-lg" />
+                  <div className="text-xs">
+                    <div className="font-semibold text-white truncate max-w-xs">{attachedImage.name}</div>
+                    <div className="text-[10px] text-indigo-300">Ready for Multimodal OCR extraction</div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedImage(null)}
+                    className="p-1 text-slate-400 hover:text-red-400 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={chatFileInputRef}
+                  accept="image/*"
+                  onChange={handleChatFileSelected}
+                  className="hidden"
+                />
+
+                {/* Attach Screenshot Button */}
+                <button
+                  type="button"
+                  onClick={() => chatFileInputRef.current?.click()}
+                  className="p-3 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-2xl border border-slate-700/80 transition-colors flex items-center justify-center"
+                  title="Upload ERP / Timetable / Calendar Screenshot (or paste with Ctrl+V)"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
+                {/* Text Input */}
+                <input
+                  type="text"
+                  value={inputVal}
+                  onChange={(e) => setInputVal(e.target.value)}
+                  placeholder="Ask anything or paste screenshot (e.g. 'Can I skip DBMS tomorrow?' or paste ERP image)..."
+                  className="flex-1 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3 text-xs md:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+
+                {/* Send Button */}
+                <button
+                  type="submit"
+                  disabled={!inputVal.trim() && !attachedImage}
+                  className="p-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-2xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 2: SMART OCR & DOCUMENT VAULT */}
+        {/* ======================================================== */}
+        {activeTab === 'scan' && (
+          <ScannerVaultView 
+            onSyncComplete={() => {
+              setStudentSubjects(loadStudentSubjects());
+            }} 
+            onNavigateToTab={(tab) => setActiveTab(tab as any)}
+          />
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 3: ACADEMIC CALENDAR & EXAMS */}
+        {/* ======================================================== */}
+        {activeTab === 'calendar' && (
+          <AcademicCalendarView onOpenScanner={() => setActiveTab('scan')} />
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 4: ATTENDANCE LAB & SIMULATOR */}
+        {/* ======================================================== */}
+        {activeTab === 'attendance' && (
+          <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
+            
+            {/* Top Attendance Stats Card */}
+            <div className="bg-gradient-to-br from-indigo-900/30 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 md:p-8 backdrop-blur-xl shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 text-center md:text-left">
+                <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold uppercase">
+                  Attendance Health Center
+                </span>
+                <h2 className="text-2xl md:text-3xl font-extrabold text-white">Overall Attendance: {overallMetrics.overallPercentage}%</h2>
+                <p className="text-xs md:text-sm text-slate-300">
+                  {overallMetrics.totalAttended} attended out of {overallMetrics.totalConducted} conducted lectures across {studentSubjects.length} enrolled subjects.
+                </p>
               </div>
 
-              {/* Timeline Bar Visual */}
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-4 sm:space-y-6">
-                <div>
-                  <h3 className="font-extrabold text-base sm:text-lg text-slate-200 mb-0.5 tracking-wide">{selectedRoom} Timeline</h3>
-                  <p className="text-[11px] sm:text-xs text-slate-400 font-semibold">Visual schedule breakdown (8:00 AM - 5:00 PM) on {getWeekday(timelineDate)}</p>
-                </div>
-
-                {/* Timeline Horizontal Bar with Mobile Scroll wrapper */}
-                <div className="space-y-3 overflow-x-auto pb-2">
-                  <div className="min-w-[440px]">
-                    <div className="h-11 w-full bg-slate-950/90 rounded-2xl overflow-hidden flex border border-slate-800 shadow-inner p-1">
-                      {roomPeriods.map((p, i) => {
-                        const startMin = (timeToMinutes(p.start) || 8*60);
-                        const endMin = (timeToMinutes(p.end) || 17*60);
-                        const widthPercent = Math.max(5, ((endMin - startMin) / (17 * 60 - 8 * 60)) * 100);
-                        
-                        return (
-                          <div 
-                            key={i}
-                            style={{ width: `${widthPercent}%` }}
-                            className={`h-full flex items-center justify-center text-[10px] font-black rounded-lg transition-all duration-200 relative group cursor-pointer ${
-                              p.status === 'FREE' 
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10 hover:bg-emerald-500/25 mx-0.5' 
-                                : 'bg-rose-500/15 text-rose-400 border border-rose-500/10 hover:bg-rose-500/25 mx-0.5'
-                            }`}
-                          >
-                            <span className="truncate px-1 tracking-wider uppercase text-[9px]">{p.status}</span>
-                            
-                            {/* Tooltip detail block */}
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-950 border border-slate-800 p-2.5 rounded-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 z-50 shadow-2xl">
-                              <div className="font-extrabold text-slate-200 text-xs">{p.start} - {p.end}</div>
-                              <div className="text-[9px] text-indigo-400 font-black uppercase tracking-widest mt-0.5">{p.status}</div>
-                              {p.subject && (
-                                <div className="mt-1.5 pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 font-medium">
-                                  <strong>{p.subject}</strong>
-                                  <div className="text-[9px] text-slate-500 mt-0.5">{p.course}</div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Horizontal labels */}
-                    <div className="flex justify-between text-[9px] sm:text-[10px] text-slate-500 font-black px-1.5 uppercase tracking-widest mt-2">
-                      <span>8:00 AM</span>
-                      <span>10:00 AM</span>
-                      <span>12:00 PM</span>
-                      <span>2:00 PM</span>
-                      <span>4:00 PM</span>
-                      <span>5:00 PM</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Period Cards details list */}
-                <div className="space-y-2.5 pt-1">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Period Details</h4>
-                  {roomPeriods.map((p, i) => (
-                    <div 
-                      key={i} 
-                      className={`flex items-center justify-between p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all duration-200 ${
-                        p.status === 'FREE' 
-                          ? 'bg-emerald-950/10 border-emerald-500/10 text-emerald-400' 
-                          : 'bg-slate-950/70 border-slate-800 text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 sm:gap-4 truncate pr-2">
-                        <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                          p.status === 'FREE' ? 'bg-emerald-500/10 border-emerald-500/15' : 'bg-slate-800/40 border-slate-800'
-                        }`}>
-                          <Clock className={`w-4 h-4 ${p.status === 'FREE' ? 'text-emerald-400' : 'text-slate-500'}`} />
-                        </div>
-                        <div className="truncate">
-                          <span className="font-extrabold block text-xs sm:text-sm">{p.start} - {p.end}</span>
-                          {p.subject && (
-                            <span className="text-[10px] sm:text-[11px] text-slate-400 block mt-0.5 font-semibold truncate">
-                              {p.subject} <span className="text-slate-650">•</span> {p.course}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border shrink-0 ${
-                        p.status === 'FREE' 
-                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' 
-                          : 'bg-rose-500/15 text-rose-400 border-rose-500/20'
-                      }`}>{p.status}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveTab('scan')}
+                  className="px-4 py-2.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-2"
+                >
+                  <Camera className="w-4 h-4" />
+                  Import from ERP Screenshot
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingSubject({ id: '', name: '', code: '', attended: 0, total: 0, targetPercentage: 75 });
+                    setIsEditingSubject(true);
+                  }}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Subject
+                </button>
               </div>
             </div>
-          )}
 
-          {/* ========================================================================= */}
-          {/* TAB 4: Room Schedules List */}
-          {/* ========================================================================= */}
-          {activeTab === 'schedule' && (
-            <div className="max-w-4xl w-full mx-auto space-y-4 sm:space-y-6">
-              {/* Select Options card */}
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Classroom</label>
-                    <select
-                      value={selectedRoom}
-                      onChange={(e) => setSelectedRoom(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                    >
-                      {classrooms.map(room => (
-                        <option key={room} value={room}>{room}</option>
-                      ))}
-                    </select>
+            {/* Subject Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {subjectMetricsList.map((m) => {
+                const isSafe = m.riskLevel === 'SAFE';
+                const isWarning = m.riskLevel === 'WARNING';
+                return (
+                  <div
+                    key={m.subject.id}
+                    className={`p-6 rounded-3xl border backdrop-blur-xl shadow-xl flex flex-col justify-between space-y-4 ${
+                      isSafe ? 'bg-slate-900/80 border-slate-800' : isWarning ? 'bg-amber-950/20 border-amber-500/40' : 'bg-red-950/20 border-red-500/40'
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-mono font-bold text-indigo-300">{m.subject.code || 'CORE'}</span>
+                        <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${
+                          isSafe ? 'bg-emerald-500/20 text-emerald-300' : isWarning ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'
+                        }`}>
+                          {m.riskLevel}
+                        </span>
+                      </div>
+                      <h4 className="text-base font-bold text-white">{m.subject.name}</h4>
+                      
+                      {/* Attendance Stats */}
+                      <div className="flex items-center justify-between text-xs py-2 border-y border-slate-800">
+                        <span className="text-slate-400">Attended / Conducted:</span>
+                        <span className="font-mono font-bold text-white">{m.subject.attended} / {m.subject.total}</span>
+                      </div>
+
+                      <p className="text-xs text-slate-300">{m.statusText}</p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-2xl font-extrabold text-white font-mono">{m.currentPercentage}%</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingSubject(m.subject);
+                            setIsEditingSubject(true);
+                          }}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubject(m.subject.id)}
+                          className="p-2 bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-300 rounded-xl"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Date</label>
-                    <input 
-                      type="date" 
-                      value={timelineDate}
-                      onChange={(e) => setTimelineDate(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition shadow-inner font-semibold cursor-pointer"
-                      required
+        {/* ======================================================== */}
+        {/* TAB 5: VACANT CLASSROOM FINDER */}
+        {/* ======================================================== */}
+        {activeTab === 'find' && (
+          <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-xl shadow-xl space-y-6">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Search className="w-5 h-5 text-indigo-400" />
+                Find Real-Time Vacant Classrooms & Labs
+              </h2>
+
+              <form onSubmit={handleFindSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-slate-400">Date</label>
+                    <input
+                      type="date"
+                      value={findDate}
+                      onChange={(e) => setFindDate(e.target.value)}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-400">Start Time</label>
+                    <input
+                      type="text"
+                      value={findStart}
+                      onChange={(e) => setFindStart(e.target.value)}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-400">End Time</label>
+                    <input
+                      type="text"
+                      value={findEnd}
+                      onChange={(e) => setFindEnd(e.target.value)}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-400">Room Type</label>
+                    <select
+                      value={findType}
+                      onChange={(e) => setFindType(e.target.value as any)}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="ALL">All Rooms</option>
+                      <option value="CR">Classrooms (CR)</option>
+                      <option value="LT">Lecture Theatres (LT)</option>
+                      <option value="LAB">Labs</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              {/* Schedule listing */}
-              <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
-                <div>
-                  <h3 className="font-extrabold text-base sm:text-lg text-slate-200 mb-0.5 tracking-wide">{selectedRoom} Scheduled Classes</h3>
-                  <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Timetable list for {getWeekday(timelineDate)}</p>
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentTime}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all"
+                  >
+                    ⚡ Use Current Time Slot
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30"
+                  >
+                    Search Vacant Rooms
+                  </button>
                 </div>
+              </form>
 
-                {roomSchedule.length > 0 ? (
-                  <div className="space-y-2.5 sm:space-y-3.5">
-                    {roomSchedule.map((s, i) => (
-                      <div key={i} className="bg-slate-950/70 border border-slate-800/70 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl hover:border-indigo-500/20 hover:scale-[1.01] transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3 sm:gap-4 truncate">
-                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-500/15">
-                            <BookOpen className="w-4.5 h-4.5 text-indigo-400" />
-                          </div>
-                          <div className="truncate">
-                            <h4 className="font-black text-slate-200 text-xs sm:text-sm leading-tight truncate">{s.subject}</h4>
-                            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-slate-500 text-[10px] sm:text-[11px] mt-1 font-semibold">
-                              <span>Course: <strong className="text-slate-400">{s.course}</strong></span>
-                              <span>•</span>
-                              <span>Sem {s.semester}, Sec {s.section}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="bg-indigo-600/10 border border-indigo-500/15 text-indigo-400 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-left sm:text-center shrink-0 self-start sm:self-center shadow-sm">
-                          <span className="text-[8px] sm:text-[9px] uppercase font-black tracking-widest block">Lecture Timing</span>
-                          <span className="font-black text-xs sm:text-sm block">{s.startTime} - {s.endTime}</span>
-                        </div>
+              {/* Vacant Rooms Results */}
+              {searchedFind && (
+                <div className="pt-6 border-t border-slate-800 space-y-4">
+                  <h3 className="text-sm font-bold text-white">
+                    Found {findResults.length} Available Rooms ({getWeekday(findDate)} {findStart} - {findEnd})
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                    {findResults.map((r, i) => (
+                      <div key={i} className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl text-center text-xs font-bold text-indigo-300">
+                        {r}
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-center py-12 sm:py-16 bg-slate-950/20 rounded-2xl border border-dashed border-slate-800">
-                    <CheckCircle className="w-10 h-10 sm:w-12 sm:h-12 text-emerald-500/60 mx-auto mb-2 sm:mb-3 animate-pulse" />
-                    <p className="text-slate-200 font-extrabold text-sm mb-0.5">No Classes Scheduled</p>
-                    <p className="text-slate-500 text-xs font-semibold">This classroom is completely vacant the entire day.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* ========================================================================= */}
-        {/* MOBILE BOTTOM NAVIGATION BAR (Fixed at bottom on phones / small screens) */}
-        {/* ========================================================================= */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-2xl border-t border-slate-800/80 px-2 py-1.5 flex justify-around items-center shadow-[0_-8px_32px_rgba(0,0,0,0.6)]">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all duration-200 ${
-                  isActive 
-                    ? 'text-indigo-400 scale-105' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-indigo-600/20 shadow-sm shadow-indigo-500/20 border border-indigo-500/30' : ''}`}>
-                  <Icon className="w-5 h-5" />
                 </div>
-                <span className={`text-[10px] mt-0.5 font-bold tracking-tight ${isActive ? 'text-indigo-300 font-black' : ''}`}>
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 6: ROOM TIMELINE & SCHEDULE */}
+        {/* ======================================================== */}
+        {activeTab === 'timeline' && (
+          <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-xl shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-indigo-400" />
+                  Room Schedule & Day Timeline
+                </h2>
+                
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={timelineDate}
+                    onChange={(e) => setTimelineDate(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <select
+                    value={selectedRoom}
+                    onChange={(e) => setSelectedRoom(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {classrooms.map((r, i) => (
+                      <option key={i} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Room Schedule Periods */}
+              <div className="space-y-3">
+                {roomPeriods.map((p, i) => (
+                  <div
+                    key={i}
+                    className={`p-4 rounded-2xl border flex items-center justify-between ${
+                      p.status === 'FREE' ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-950/60 border-slate-800 text-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-bold font-mono">{p.start} - {p.end}</div>
+                      {p.subject && <div className="text-xs font-semibold text-white mt-1">{p.subject} ({p.course})</div>}
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${
+                      p.status === 'FREE' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'
+                    }`}>
+                      {p.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Detailed Scheduled Lectures if any */}
+              {roomSchedule.length > 0 && (
+                <div className="pt-4 border-t border-slate-800 space-y-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Scheduled Lecture Details ({roomSchedule.length})
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {roomSchedule.map((s, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
+                        <div className="font-semibold text-white">{s.subject}</div>
+                        <div className="text-indigo-300 mt-1 font-mono">{s.startTime} - {s.endTime}</div>
+                        <div className="text-slate-400 mt-0.5">{s.course} ({s.section})</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       </main>
+
+      {/* Edit/Add Subject Modal */}
+      {isEditingSubject && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl space-y-4 animate-scaleUp">
+            <h3 className="text-lg font-bold text-white">
+              {editingSubject.id ? 'Edit Subject Attendance' : 'Add Subject'}
+            </h3>
+
+            <form onSubmit={handleSaveSubjectModal} className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-slate-400">Subject Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSubject.name}
+                  onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                  placeholder="e.g. Database Management Systems"
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-400">Course Code (Optional)</label>
+                <input
+                  type="text"
+                  value={editingSubject.code || ''}
+                  onChange={(e) => setEditingSubject({ ...editingSubject, code: e.target.value })}
+                  placeholder="e.g. TCS-401"
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-400">Attended Lectures</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={editingSubject.attended}
+                    onChange={(e) => setEditingSubject({ ...editingSubject, attended: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-400">Total Lectures</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={editingSubject.total}
+                    onChange={(e) => setEditingSubject({ ...editingSubject, total: parseInt(e.target.value, 10) || 0 })}
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingSubject(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30"
+                >
+                  Save Subject
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

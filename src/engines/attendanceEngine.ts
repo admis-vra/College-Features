@@ -1,0 +1,314 @@
+// -------------------------------------------------------------
+// DETERMINISTIC ATTENDANCE & MATHEMATICAL SIMULATION ENGINE
+// -------------------------------------------------------------
+
+export type AttendanceRiskLevel = 'SAFE' | 'WARNING' | 'CRITICAL';
+
+export interface AttendanceSubject {
+  id: string;
+  name: string;
+  code?: string;
+  attended: number;
+  total: number;
+  targetPercentage: number;
+  notes?: string;
+}
+
+export interface SubjectAttendanceMetrics {
+  subject: AttendanceSubject;
+  currentPercentage: number;
+  riskLevel: AttendanceRiskLevel;
+  safeSkips: number;
+  classesRequired: number;
+  statusText: string;
+}
+
+export interface OverallAttendanceSummary {
+  totalAttended: number;
+  totalConducted: number;
+  overallPercentage: number;
+  overallRiskLevel: AttendanceRiskLevel;
+  lowestSubject?: SubjectAttendanceMetrics;
+  highestSubject?: SubjectAttendanceMetrics;
+  criticalSubjectsCount: number;
+  warningSubjectsCount: number;
+  safeSubjectsCount: number;
+}
+
+export interface SimulationResult {
+  subjectName: string;
+  initialAttended: number;
+  initialTotal: number;
+  initialPercentage: number;
+  futureAttended: number;
+  futureSkipped: number;
+  projectedAttended: number;
+  projectedTotal: number;
+  projectedPercentage: number;
+  projectedRiskLevel: AttendanceRiskLevel;
+  percentageDelta: number;
+  targetPercentage: number;
+  isAboveTarget: boolean;
+  recoveryClassesNeeded: number;
+  adviceText: string;
+}
+
+// Default initial subject seed if student hasn't entered data yet
+export const DEFAULT_SUBJECTS: AttendanceSubject[] = [
+  {
+    id: 'sub_1',
+    name: 'Object Oriented Programming with C++',
+    code: 'TCS-301',
+    attended: 28,
+    total: 32,
+    targetPercentage: 75
+  },
+  {
+    id: 'sub_2',
+    name: 'Fundamentals of Cloud Computing and Big Data',
+    code: 'TCS-302',
+    attended: 22,
+    total: 30,
+    targetPercentage: 75
+  },
+  {
+    id: 'sub_3',
+    name: 'Introduction to Cryptography',
+    code: 'TCS-303',
+    attended: 17,
+    total: 25,
+    targetPercentage: 75
+  },
+  {
+    id: 'sub_4',
+    name: 'Python Programming',
+    code: 'TCS-304',
+    attended: 29,
+    total: 34,
+    targetPercentage: 75
+  },
+  {
+    id: 'sub_5',
+    name: 'Career Skills-I',
+    code: 'XCS-301',
+    attended: 14,
+    total: 16,
+    targetPercentage: 75
+  }
+];
+
+// -------------------------------------------------------------
+// PURE DETERMINISTIC MATHEMATICS
+// -------------------------------------------------------------
+
+/**
+ * Computes exact metrics for a single subject without model estimation.
+ */
+export function calculateSubjectMetrics(subject: AttendanceSubject): SubjectAttendanceMetrics {
+  const attended = Math.max(0, subject.attended);
+  const total = Math.max(attended, subject.total);
+  const target = subject.targetPercentage || 75;
+  const targetRatio = target / 100;
+
+  const currentPercentage = total === 0 ? 100 : Number(((attended / total) * 100).toFixed(2));
+
+  let riskLevel: AttendanceRiskLevel = 'SAFE';
+  if (currentPercentage < 70) {
+    riskLevel = 'CRITICAL';
+  } else if (currentPercentage < target) {
+    riskLevel = 'WARNING';
+  }
+
+  // Safe Skips: y = floor((A - T * C) / T)
+  let safeSkips = 0;
+  if (currentPercentage >= target) {
+    safeSkips = Math.floor((attended - targetRatio * total) / targetRatio);
+  }
+
+  // Classes Required: x = ceil((T * C - A) / (1 - T))
+  let classesRequired = 0;
+  if (currentPercentage < target) {
+    classesRequired = Math.ceil((targetRatio * total - attended) / (1 - targetRatio));
+  }
+
+  let statusText = '';
+  if (currentPercentage >= target) {
+    statusText = safeSkips > 0 
+      ? `You can safely skip up to ${safeSkips} class${safeSkips > 1 ? 'es' : ''} while staying above ${target}%.` 
+      : `You are exactly on target. Any missed class will drop you below ${target}%.`;
+  } else {
+    statusText = `You need to attend the next ${classesRequired} consecutive class${classesRequired > 1 ? 'es' : ''} to reach ${target}%.`;
+  }
+
+  return {
+    subject,
+    currentPercentage,
+    riskLevel,
+    safeSkips: Math.max(0, safeSkips),
+    classesRequired: Math.max(0, classesRequired),
+    statusText
+  };
+}
+
+/**
+ * Simulates future attendance changes (e.g. "If I skip 3 classes and attend 2").
+ */
+export function simulateAttendanceScenario(
+  subjectName: string,
+  currentAttended: number,
+  currentTotal: number,
+  futureAttended: number,
+  futureSkipped: number,
+  targetPercentage: number = 75
+): SimulationResult {
+  const initialAttended = Math.max(0, currentAttended);
+  const initialTotal = Math.max(initialAttended, currentTotal);
+  const initialPercentage = initialTotal === 0 ? 100 : Number(((initialAttended / initialTotal) * 100).toFixed(2));
+
+  const projectedAttended = initialAttended + futureAttended;
+  const projectedTotal = initialTotal + futureAttended + futureSkipped;
+  const projectedPercentage = projectedTotal === 0 ? 100 : Number(((projectedAttended / projectedTotal) * 100).toFixed(2));
+
+  let projectedRiskLevel: AttendanceRiskLevel = 'SAFE';
+  if (projectedPercentage < 70) {
+    projectedRiskLevel = 'CRITICAL';
+  } else if (projectedPercentage < targetPercentage) {
+    projectedRiskLevel = 'WARNING';
+  }
+
+  const percentageDelta = Number((projectedPercentage - initialPercentage).toFixed(2));
+  const isAboveTarget = projectedPercentage >= targetPercentage;
+
+  let recoveryClassesNeeded = 0;
+  if (!isAboveTarget) {
+    const targetRatio = targetPercentage / 100;
+    recoveryClassesNeeded = Math.ceil((targetRatio * projectedTotal - projectedAttended) / (1 - targetRatio));
+  }
+
+  let adviceText = '';
+  if (isAboveTarget) {
+    const targetRatio = targetPercentage / 100;
+    const remainingSafeSkips = Math.floor((projectedAttended - targetRatio * projectedTotal) / targetRatio);
+    adviceText = `✅ Attendance remains SAFE at ${projectedPercentage}%. You will still have ${remainingSafeSkips} safe skip${remainingSafeSkips !== 1 ? 's' : ''} available.`;
+  } else {
+    adviceText = `⚠️ Attendance will DROP to ${projectedPercentage}% (below ${targetPercentage}%). You would need to attend ${recoveryClassesNeeded} consecutive class${recoveryClassesNeeded > 1 ? 'es' : ''} to recover!`;
+  }
+
+  return {
+    subjectName,
+    initialAttended,
+    initialTotal,
+    initialPercentage,
+    futureAttended,
+    futureSkipped,
+    projectedAttended,
+    projectedTotal,
+    projectedPercentage,
+    projectedRiskLevel,
+    percentageDelta,
+    targetPercentage,
+    isAboveTarget,
+    recoveryClassesNeeded: Math.max(0, recoveryClassesNeeded),
+    adviceText
+  };
+}
+
+/**
+ * Calculates aggregate summary across all subjects.
+ */
+export function calculateOverallAttendance(subjects: AttendanceSubject[], defaultTarget = 75): OverallAttendanceSummary {
+  if (!subjects || subjects.length === 0) {
+    return {
+      totalAttended: 0,
+      totalConducted: 0,
+      overallPercentage: 100,
+      overallRiskLevel: 'SAFE',
+      criticalSubjectsCount: 0,
+      warningSubjectsCount: 0,
+      safeSubjectsCount: 0
+    };
+  }
+
+  let totalAttended = 0;
+  let totalConducted = 0;
+  const metricsList = subjects.map(s => calculateSubjectMetrics(s));
+
+  metricsList.forEach(m => {
+    totalAttended += m.subject.attended;
+    totalConducted += m.subject.total;
+  });
+
+  const overallPercentage = totalConducted === 0 ? 100 : Number(((totalAttended / totalConducted) * 100).toFixed(2));
+
+  let overallRiskLevel: AttendanceRiskLevel = 'SAFE';
+  if (overallPercentage < 70) {
+    overallRiskLevel = 'CRITICAL';
+  } else if (overallPercentage < defaultTarget) {
+    overallRiskLevel = 'WARNING';
+  }
+
+  const sorted = [...metricsList].sort((a, b) => a.currentPercentage - b.currentPercentage);
+  const lowestSubject = sorted[0];
+  const highestSubject = sorted[sorted.length - 1];
+
+  const criticalSubjectsCount = metricsList.filter(m => m.riskLevel === 'CRITICAL').length;
+  const warningSubjectsCount = metricsList.filter(m => m.riskLevel === 'WARNING').length;
+  const safeSubjectsCount = metricsList.filter(m => m.riskLevel === 'SAFE').length;
+
+  return {
+    totalAttended,
+    totalConducted,
+    overallPercentage,
+    overallRiskLevel,
+    lowestSubject,
+    highestSubject,
+    criticalSubjectsCount,
+    warningSubjectsCount,
+    safeSubjectsCount
+  };
+}
+
+// -------------------------------------------------------------
+// INDEXEDDB DATA STORE HELPERS (UNLIMITED BROWSER STORAGE)
+// -------------------------------------------------------------
+import { db } from '../storage/db';
+
+export function loadStudentSubjects(): AttendanceSubject[] {
+  return db.getAttendance();
+}
+
+export function saveStudentSubjects(subjects: AttendanceSubject[]): void {
+  db.saveAttendance(subjects);
+}
+
+export function findMatchingSubject(query: string, subjects: AttendanceSubject[]): AttendanceSubject | undefined {
+  const clean = query.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  // Exact match or substring
+  for (const s of subjects) {
+    const cleanName = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanCode = (s.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (clean.includes(cleanName) || cleanName.includes(clean)) return s;
+    if (cleanCode && (clean.includes(cleanCode) || cleanCode.includes(clean))) return s;
+  }
+
+  // Keyword match
+  const keywordsMap: Record<string, string[]> = {
+    'c++': ['c++', 'cpp', 'oops'],
+    'cloud': ['cloud', 'big data', 'aws'],
+    'crypto': ['crypto', 'cryptography', 'security'],
+    'python': ['python', 'py'],
+    'career': ['career', 'skills', 'aptitude', 'xcs']
+  };
+
+  for (const s of subjects) {
+    const sNameLower = s.name.toLowerCase();
+    for (const [, tags] of Object.entries(keywordsMap)) {
+      if (tags.some(t => query.toLowerCase().includes(t)) && tags.some(t => sNameLower.includes(t))) {
+        return s;
+      }
+    }
+  }
+
+  return undefined;
+}

@@ -28,10 +28,43 @@ export interface FreePeriod {
   course?: string;
 }
 
+import { 
+  loadStudentSubjects, 
+  calculateSubjectMetrics, 
+  simulateAttendanceScenario, 
+  calculateOverallAttendance, 
+  findMatchingSubject,
+  saveStudentSubjects
+} from '../engines/attendanceEngine';
+
+import {
+  getExamSchedule,
+  getDaysUntilNextExam,
+  getUpcomingHolidays,
+  mergeImportedEvents
+} from '../engines/academicCalendarEngine';
+
+import {
+  extractDocumentFromImage,
+  OCRDocType
+} from '../engines/ocrEngine';
+
 export interface AgentResponse {
   text: string;
   widget?: {
-    type: 'free_rooms' | 'room_periods' | 'room_schedule' | 'section_schedule' | 'current_status';
+    type: 
+      | 'free_rooms' 
+      | 'room_periods' 
+      | 'room_schedule' 
+      | 'section_schedule' 
+      | 'current_status' 
+      | 'attendance_overview' 
+      | 'attendance_subject' 
+      | 'attendance_simulation'
+      | 'calendar_events'
+      | 'exam_countdown'
+      | 'ocr_attachment_result'
+      | 'daily_planner';
     title: string;
     data: any;
   };
@@ -152,10 +185,16 @@ export function findFreeClassrooms(day: string, startTimeStr: string, endTimeStr
         if (roomType === 'LAB' && !rawUpper.includes('LAB') && !rawUpper.includes('WORKSHOP')) return;
         if (roomType === 'AUDI' && !rawUpper.includes('AUDI')) return;
       }
+
       if (floor !== undefined) {
-        const floorMatch = rawRoom.match(/^(\d)/);
-        if (floorMatch && parseInt(floorMatch[1], 10) !== floor) return;
+        const floorMatch = rawRoom.match(/(\d+)/);
+        if (floorMatch) {
+          const num = parseInt(floorMatch[1], 10);
+          const roomFloor = num >= 100 ? Math.floor(num / 100) : num;
+          if (roomFloor !== floor) return;
+        }
       }
+
       freeRooms.push(rawRoom);
     }
   });
@@ -165,43 +204,39 @@ export function findFreeClassrooms(day: string, startTimeStr: string, endTimeStr
 
 export function getRoomPeriods(room: string, day: string): FreePeriod[] {
   const normTarget = normalizeRoom(room);
-  const roomEntries = TIMETABLE.filter(e => normalizeRoom(e.room_number) === normTarget && e.day.toLowerCase() === day.toLowerCase());
-  
-  if (roomEntries.length === 0) {
-    return [{ start: minutesToTimeString(COLLEGE_START_MINUTES), end: minutesToTimeString(COLLEGE_END_MINUTES), status: 'FREE' }];
-  }
-
-  const sorted = roomEntries.map(e => ({
-    start: timeToMinutes(e.start_time),
-    end: timeToMinutes(e.end_time),
-    subject: e.subject,
-    course: `${e.course} (Sem ${e.semester}, Sec ${e.section})`
-  })).sort((a, b) => a.start - b.start);
+  const entries = TIMETABLE
+    .filter(e => normalizeRoom(e.room_number) === normTarget && e.day.toLowerCase() === day.toLowerCase())
+    .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
 
   const periods: FreePeriod[] = [];
-  let current = COLLEGE_START_MINUTES;
+  let currentTime = COLLEGE_START_MINUTES;
 
-  sorted.forEach(entry => {
-    if (current < entry.start) {
+  entries.forEach(e => {
+    const s = timeToMinutes(e.start_time);
+    const end = timeToMinutes(e.end_time);
+
+    if (s > currentTime) {
       periods.push({
-        start: minutesToTimeString(current),
-        end: minutesToTimeString(entry.start),
+        start: minutesToTimeString(currentTime),
+        end: minutesToTimeString(s),
         status: 'FREE'
       });
     }
+
     periods.push({
-      start: minutesToTimeString(entry.start),
-      end: minutesToTimeString(entry.end),
+      start: e.start_time,
+      end: e.end_time,
       status: 'OCCUPIED',
-      subject: entry.subject,
-      course: entry.course
+      subject: e.subject,
+      course: `${e.course} (${e.section})`
     });
-    current = Math.max(current, entry.end);
+
+    currentTime = Math.max(currentTime, end);
   });
 
-  if (current < COLLEGE_END_MINUTES) {
+  if (currentTime < COLLEGE_END_MINUTES) {
     periods.push({
-      start: minutesToTimeString(current),
+      start: minutesToTimeString(currentTime),
       end: minutesToTimeString(COLLEGE_END_MINUTES),
       status: 'FREE'
     });
@@ -214,6 +249,7 @@ export function getRoomSchedule(room: string, day: string): ClassSchedule[] {
   const normTarget = normalizeRoom(room);
   return TIMETABLE
     .filter(e => normalizeRoom(e.room_number) === normTarget && e.day.toLowerCase() === day.toLowerCase())
+    .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time))
     .map(e => ({
       startTime: e.start_time,
       endTime: e.end_time,
@@ -221,310 +257,436 @@ export function getRoomSchedule(room: string, day: string): ClassSchedule[] {
       semester: e.semester,
       section: e.section,
       subject: e.subject
-    }))
-    .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+    }));
 }
 
-// -------------------------------------------------------------
-// AGENT TOOLS & INTENT ENGINE (100% In-Browser Autonomous AI)
-// -------------------------------------------------------------
+// =============================================================
+// MAIN AGENTIC TOOL ORCHESTRATOR
+// =============================================================
 
-export function runAgenticAI(userQuery: string): AgentResponse {
-  const clean = userQuery.toLowerCase().trim();
+export async function runAgenticAI(
+  userQuery: string, 
+  imageAttachment?: { dataUrl: string; docType?: OCRDocType; name?: string }
+): Promise<AgentResponse> {
   const now = new Date();
-  const currentDayIndex = now.getDay() === 0 ? 6 : now.getDay() - 1;
-  const systemDay = WEEKDAYS[currentDayIndex];
+  const currentDayIndex = now.getDay();
+  const defaultDay = WEEKDAYS[currentDayIndex === 0 ? 6 : currentDayIndex - 1];
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const currentTimeStr = minutesToTimeString(currentMinutes);
 
-  // =============================================================
-  // INTENT LAYER 1: GREETINGS & SOCIAL CONVERSATION
-  // =============================================================
-  const greetings = ['hi', 'hello', 'hey', 'heya', 'hola', 'namaste', 'greetings', 'sup', 'yo'];
-  if (greetings.includes(clean) || clean.startsWith('hello ') || clean.startsWith('hey ') || clean.startsWith('hi ') || clean === 'hello there' || clean === 'hey there') {
-    return {
-      toolUsed: 'ConversationalGreetingTool',
-      text: `👋 **Hello! Welcome to the GEHU Classroom Finder Agent.**\n\n` +
-            `I'm your intelligent campus assistant. How can I help you today? Here are some things you can ask me:\n\n` +
-            `• 🧪 *"Are there any labs free right now?"*\n` +
-            `• 🏫 *"What class is in room 124 right now?"*\n` +
-            `• 🎓 *"Show me Section A's timetable on Monday"*\n` +
-            `• 🕒 *"Which rooms are vacant tomorrow at 10 AM?"*\n` +
-            `• 📊 *"Show me campus statistics and total classrooms"*`
-    };
-  }
-
-  if (clean.includes('how are you') || clean.includes('how r u') || clean.includes('how do you do') || clean.includes('whats up') || clean.includes("what's up")) {
-    return {
-      toolUsed: 'ConversationalSmalltalkTool',
-      text: `😊 I'm doing great and ready to assist you!\n\n` +
-            `All classroom schedules and vacancy records for GEHU are loaded in memory. Ask me about free rooms, lecture routines, or specific classrooms whenever you need!`
-    };
-  }
+  const clean = userQuery.toLowerCase().trim();
 
   // =============================================================
-  // INTENT LAYER 2: IDENTITY, CAPABILITIES & HELP
+  // ACTION 0: MULTIMODAL IMAGE & OCR ATTACHMENT PROCESSING
   // =============================================================
-  if (clean.includes('who are you') || clean.includes('what are you') || clean.includes('what can you do') || clean.includes('help me') || clean === 'help' || clean.includes('your name') || clean.includes('features')) {
-    return {
-      toolUsed: 'AgentCapabilitiesTool',
-      text: `🤖 **About GEHU ClassFinder AI Agent**:\n\n` +
-            `I am a custom-built autonomous AI agent designed specifically for Graphic Era Hill University (GEHU).\n\n` +
-            `**My Key Capabilities:**\n` +
-            `1. 🔍 **Real-Time Room Vacancy:** Find free Classrooms (CR), Lecture Theatres (LT), and Labs (LAB) right now or at any specific hour.\n` +
-            `2. 📍 **Live Room Status:** Inspect whether a classroom is occupied right now, who is teaching, and the subject/course being conducted.\n` +
-            `3. 📅 **Section Timetables:** Look up daily class schedules for sections (A, B, ML, AI, DS, BCA, MCA, etc.).\n` +
-            `4. 📖 **Subject Tracking:** Search for lecture locations (e.g., Python, Cryptography, Cloud Computing, OOPS).\n` +
-            `5. 📊 **Campus Overview:** Instant analytics on room allocation, floor filters, and total classrooms.`
-    };
-  }
+  if (imageAttachment && imageAttachment.dataUrl) {
+    try {
+      const scanResult = await extractDocumentFromImage(
+        imageAttachment.dataUrl, 
+        imageAttachment.docType || 'AUTO_DETECT'
+      );
 
-  // =============================================================
-  // INTENT LAYER 3: GRATITUDE & POLITE CLOSINGS
-  // =============================================================
-  if (clean === 'thank you' || clean === 'thanks' || clean === 'thx' || clean.startsWith('thanks') || clean.startsWith('thank you') || clean === 'good job' || clean === 'great' || clean === 'awesome' || clean === 'perfect' || clean === 'cool') {
-    return {
-      toolUsed: 'ConversationalGratitudeTool',
-      text: `🎉 You're very welcome! Let me know if you need to find another room or check upcoming lecture schedules. Have a productive day! 🚀`
-    };
-  }
-
-  if (clean === 'bye' || clean === 'goodbye' || clean === 'see you' || clean === 'ok' || clean === 'okay' || clean === 'got it') {
-    return {
-      toolUsed: 'ConversationalClosingTool',
-      text: `👍 Sounds good! Feel free to ask anytime you need a vacant classroom or timetable info.`
-    };
-  }
-
-  // =============================================================
-  // INTENT LAYER 4: GENERAL COLLEGE QUESTIONS & ACRONYMS FAQ
-  // =============================================================
-  if (clean.includes('what is lt') || clean.includes('what is cr') || clean.includes('what is lab') || clean.includes('what does lt stand for') || clean.includes('what does cr mean')) {
-    return {
-      toolUsed: 'CampusFAQTool',
-      text: `🏛️ **Room Acronyms at GEHU**:\n\n` +
-            `• **CR:** Classroom (Standard lecture classrooms for regular theory batches).\n` +
-            `• **LT:** Lecture Theatre (Tiered, high-capacity halls for combined or large sections).\n` +
-            `• **LAB:** Laboratory (Equipped computer/practical labs for programming, hardware, or science practicals).\n` +
-            `• **AUDI:** Auditorium (Large hall for mass lectures, seminars, or cultural events).`
-    };
-  }
-
-  if (clean.includes('college time') || clean.includes('college timing') || clean.includes('opening time') || clean.includes('closing time') || clean.includes('working hours')) {
-    return {
-      toolUsed: 'CampusFAQTool',
-      text: `⏰ **GEHU Working Hours & Schedule**:\n\n` +
-            `• **College Timings:** 08:00 AM – 05:00 PM (Monday to Saturday).\n` +
-            `• **Lecture Duration:** Typically 50 to 55 minutes per lecture slot (Labs usually run for 1h 50m / 2 slots).\n` +
-            `• **Lunch & Break Intervals:** Staggered between 12:00 PM and 02:00 PM depending on your section routine.`
-    };
-  }
-
-  if (clean.includes('where to study') || clean.includes('quiet place') || clean.includes('self study') || clean.includes('empty room for study')) {
-    const freeRightNow = findFreeClassrooms(systemDay, currentTimeStr, minutesToTimeString(currentMinutes + 60), 'CR');
-    const topPicks = freeRightNow.slice(0, 4).join(', ');
-    return {
-      toolUsed: 'CampusFAQTool',
-      text: `📚 **Study Space Recommendation**:\n\n` +
-            `For quiet individual or group study, you can use any vacant classroom or the Central Library.\n\n` +
-            `💡 **Currently free classrooms right now (${currentTimeStr}):**\n${topPicks || 'Check the Find Vacant Rooms tab for all available rooms.'}\n\n` +
-            `*Remember to check if a class is scheduled before settling in!*`,
-      widget: freeRightNow.length > 0 ? {
-        type: 'free_rooms',
-        title: `Free Classrooms for Study (${currentTimeStr})`,
-        data: { rooms: freeRightNow }
-      } : undefined
-    };
-  }
-
-  // =============================================================
-  // ENTITY RESOLUTION PIPELINE (Day, Time, Room, Section, Subject)
-  // =============================================================
-
-  // 1. Resolve Day
-  let targetDay = systemDay;
-  if (clean.includes("tomorrow")) {
-    targetDay = WEEKDAYS[(currentDayIndex + 1) % 7];
-  } else if (clean.includes("yesterday")) {
-    targetDay = WEEKDAYS[(currentDayIndex + 6) % 7];
-  } else {
-    for (const d of WEEKDAYS) {
-      if (clean.includes(d.toLowerCase())) {
-        targetDay = d;
-        break;
+      // Auto-attach extracted data to local storage
+      if (scanResult.docType === 'ERP_ATTENDANCE' && scanResult.extractedData.subjects) {
+        saveStudentSubjects(scanResult.extractedData.subjects);
+        const overall = calculateOverallAttendance(scanResult.extractedData.subjects);
+        return {
+          toolUsed: 'MultimodalOcrExtractionTool',
+          text: `📸 **ERP Attendance Screenshot Processed & Attached!**\n\n` +
+                `✅ Extracted **${scanResult.extractedData.subjects.length} subjects** directly from your ERP portal screenshot.\n` +
+                `📊 **Overall Attendance:** **${overall.overallPercentage}%** (${overall.totalAttended}/${overall.totalConducted} classes attended).\n` +
+                `🛡️ **Status:** **${overall.overallRiskLevel}** (${overall.safeSubjectsCount} Safe, ${overall.warningSubjectsCount} Warning, ${overall.criticalSubjectsCount} Critical).\n\n` +
+                `I have updated your live attendance metrics. You can now ask: *"Can I skip DBMS tomorrow?"* or *"What is my lowest attendance subject?"*`,
+          widget: {
+            type: 'ocr_attachment_result',
+            title: 'ERP Attendance Extracted',
+            data: { scanResult, subjects: scanResult.extractedData.subjects, overall }
+          }
+        };
       }
+
+      if (scanResult.docType === 'ACADEMIC_CALENDAR' && scanResult.extractedData.calendarEvents) {
+        mergeImportedEvents(scanResult.extractedData.calendarEvents, false);
+        const nextExamInfo = getDaysUntilNextExam();
+        return {
+          toolUsed: 'MultimodalOcrExtractionTool',
+          text: `🗓️ **Academic Calendar Document Processed & Attached!**\n\n` +
+                `✅ Extracted **${scanResult.extractedData.calendarEvents.length} academic milestones** (Mid-Terms, End-Terms, Practicals, and Holidays).\n` +
+                (nextExamInfo.nextExam 
+                  ? `⏳ **Next Milestone:** ${nextExamInfo.nextExam.title} (in **${nextExamInfo.days} days** on ${nextExamInfo.nextExam.date}).\n\n` 
+                  : `\n`) +
+                `Your academic calendar is now synced! You can now ask: *"When is my next exam?"* or *"How many days until midterms?"*`,
+          widget: {
+            type: 'ocr_attachment_result',
+            title: 'Academic Calendar Extracted',
+            data: { scanResult, events: scanResult.extractedData.calendarEvents, nextExamInfo }
+          }
+        };
+      }
+
+      if (scanResult.docType === 'TIMETABLE' && scanResult.extractedData.timetable) {
+        return {
+          toolUsed: 'MultimodalOcrExtractionTool',
+          text: `📅 **Class Timetable Screenshot Processed & Attached!**\n\n` +
+                `✅ Extracted **${scanResult.extractedData.timetable.length} class periods** and assigned classrooms from your timetable screenshot.\n\n` +
+                `You can now ask: *"What classes do I have on Monday?"* or *"Which room is my next class?"*`,
+          widget: {
+            type: 'ocr_attachment_result',
+            title: 'Class Timetable Extracted',
+            data: { scanResult, timetable: scanResult.extractedData.timetable }
+          }
+        };
+      }
+
+      return {
+        toolUsed: 'MultimodalOcrExtractionTool',
+        text: `🖼️ **Document Processed Successfully!**\n\n${scanResult.summaryText}`,
+        widget: {
+          type: 'ocr_attachment_result',
+          title: 'Document OCR Scan',
+          data: { scanResult }
+        }
+      };
+    } catch (ocrErr: any) {
+      return {
+        toolUsed: 'MultimodalOcrExtractionTool',
+        text: `⚠️ **OCR Processing Notice:** I encountered an issue analyzing the uploaded image: ${ocrErr.message || ocrErr}. Please try again or choose a clear screenshot.`
+      };
     }
   }
 
-  // 2. Resolve Time
-  let targetTimeMinutes = currentMinutes;
+  // Detect requested Day
+  let targetDay = defaultDay;
+  const daysFound = WEEKDAYS.filter(d => clean.includes(d.toLowerCase()));
+  if (daysFound.length > 0) {
+    targetDay = daysFound[0];
+  } else if (clean.includes("tomorrow")) {
+    const tomorrowIdx = (currentDayIndex) % 7;
+    targetDay = WEEKDAYS[tomorrowIdx === 0 ? 6 : tomorrowIdx - 1];
+  } else if (clean.includes("today")) {
+    targetDay = defaultDay;
+  }
+
+  // Detect requested Time
+  let targetTimeStr = currentTimeStr;
+  let targetEndTimeStr = minutesToTimeString(currentMinutes + 60);
   let isExplicitTime = false;
+
   const timeMatch = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-  if (timeMatch && (timeMatch[3] || clean.includes("at " + timeMatch[0]) || clean.includes("from " + timeMatch[0]) || clean.includes(":") || clean.includes("o'clock"))) {
+  if (timeMatch && (clean.includes("at ") || clean.includes("from ") || clean.includes("after ") || clean.includes("pm") || clean.includes("am"))) {
     let hour = parseInt(timeMatch[1], 10);
     const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
     const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
-    if (hour > 0 && hour <= 24) {
-      if (ampm === 'PM' && hour !== 12) hour += 12;
-      if (ampm === 'AM' && hour === 12) hour = 0;
-      targetTimeMinutes = hour * 60 + minute;
-      isExplicitTime = true;
-    }
+
+    if (ampm === 'PM' && hour !== 12) hour += 12;
+    if (ampm === 'AM' && hour === 12) hour = 0;
+    if (!ampm && hour >= 1 && hour <= 6) hour += 12;
+
+    const startMins = hour * 60 + minute;
+    targetTimeStr = minutesToTimeString(startMins);
+    targetEndTimeStr = minutesToTimeString(startMins + 60);
+    isExplicitTime = true;
   }
 
-  const targetTimeStr = minutesToTimeString(targetTimeMinutes);
-  const targetEndTimeStr = minutesToTimeString(targetTimeMinutes + 55);
+  // Detect Room Type Filters
+  let roomTypeFilter: 'CR' | 'LT' | 'LAB' | 'AUDI' | undefined = undefined;
+  if (clean.includes("lab")) roomTypeFilter = 'LAB';
+  else if (clean.includes("lt") || clean.includes("theatre") || clean.includes("theater")) roomTypeFilter = 'LT';
+  else if (clean.includes("audi") || clean.includes("auditorium")) roomTypeFilter = 'AUDI';
+  else if (clean.includes("cr") || clean.includes("classroom") || clean.includes("class room")) roomTypeFilter = 'CR';
 
-  // 3. Resolve Target Room
-  let targetRoom: string | undefined = undefined;
-  const allRooms = getAllClassrooms();
-  
-  for (const r of allRooms) {
-    const norm = normalizeRoom(r).toLowerCase();
-    const raw = r.toLowerCase();
-    const digitsOnly = r.match(/\d+/)?.[0];
-    
-    if (clean.includes(raw) || clean.includes(norm)) {
-      targetRoom = r;
-      break;
-    } else if (digitsOnly && new RegExp(`\\b(room|cr|lt|lab)?\\s*${digitsOnly}\\b`, 'i').test(clean)) {
-      targetRoom = r;
-      break;
-    }
-  }
-
-  // 4. Resolve Room Types (Defaults to 'CR' classrooms only unless lab/lt/audi is explicitly specified)
-  let roomTypeFilter: 'CR' | 'LT' | 'LAB' | 'AUDI' = 'CR';
-  if (clean.includes("lab") || clean.includes("labs") || clean.includes("practical") || clean.includes("workshop")) {
-    roomTypeFilter = 'LAB';
-  } else if (clean.includes("lecture") || clean.includes("lt") || clean.includes("lts") || clean.includes("theatre")) {
-    roomTypeFilter = 'LT';
-  } else if (clean.includes("audi") || clean.includes("auditorium")) {
-    roomTypeFilter = 'AUDI';
-  } else {
-    roomTypeFilter = 'CR';
-  }
-
-  // 5. Resolve Floor filters
+  // Detect Floor Filter
   let floorFilter: number | undefined = undefined;
-  const floorMatch = clean.match(/(\d)(?:st|nd|rd|th)?\s*floor/i);
+  const floorMatch = clean.match(/(\d+)(?:st|nd|rd|th)?\s*floor/i);
   if (floorMatch) {
     floorFilter = parseInt(floorMatch[1], 10);
   }
 
   // =============================================================
-  // ACTION A: "What class is in room X right now / who is in room X?"
+  // ACTION A: ACADEMIC CALENDAR & EXAM INTELLIGENCE QUERIES
   // =============================================================
-  if (targetRoom && (clean.includes("which class") || clean.includes("what class") || clean.includes("who is in") || clean.includes("status of") || clean.includes("is occupied") || clean.includes("is anyone in") || clean.includes("going on in"))) {
-    const schedules = getRoomSchedule(targetRoom, targetDay);
-    const activeClass = schedules.find(s => {
+  if (
+    clean.includes("exam") || 
+    clean.includes("midterm") || 
+    clean.includes("mid term") || 
+    clean.includes("mid-term") ||
+    clean.includes("end term") || 
+    clean.includes("endterm") || 
+    clean.includes("calendar") || 
+    clean.includes("holiday") || 
+    clean.includes("vacation") || 
+    clean.includes("days until") || 
+    clean.includes("when is") && (clean.includes("test") || clean.includes("exam") || clean.includes("practical") || clean.includes("submission") || clean.includes("viva"))
+  ) {
+    // Check for Holiday queries
+    if (clean.includes("holiday") || clean.includes("vacation") || clean.includes("break") || clean.includes("diwali") || clean.includes("off")) {
+      const holidays = getUpcomingHolidays();
+      if (holidays.length === 0) {
+        return {
+          toolUsed: 'AcademicCalendarTool',
+          text: `🏖️ **University Holidays Status**:\n\nThere are no upcoming declared university holidays in the current semester cycle. Classes will proceed as per the regular timetable.`
+        };
+      }
+      const holidayList = holidays.map(h => `• **${h.title}**: ${h.formattedDate} (${h.daysRemaining > 0 ? `in **${h.daysRemaining} days**` : 'Today'})`).join('\n');
+      return {
+        toolUsed: 'AcademicCalendarTool',
+        text: `🎉 **Upcoming University Holidays & Recesses**:\n\n${holidayList}\n\n💡 *Classes and lab sessions are suspended on these gazetted dates.*`,
+        widget: {
+          type: 'calendar_events',
+          title: 'Upcoming University Holidays',
+          data: { events: holidays }
+        }
+      };
+    }
+
+    // Check specific exam countdown
+    const nextExam = getDaysUntilNextExam();
+    const upcomingExams = getExamSchedule();
+
+    if (clean.includes("days until") || clean.includes("how many days") || clean.includes("when is my next exam")) {
+      if (nextExam.nextExam) {
+        return {
+          toolUsed: 'ExamCountdownTool',
+          text: `⏳ **Next Examination Countdown**:\n\n` +
+                `🎯 **${nextExam.nextExam.title}**\n` +
+                `📅 **Date:** ${nextExam.nextExam.formattedDate} (${nextExam.days === 0 ? '🔥 **TODAY**' : `in **${nextExam.days} days**`})\n` +
+                (nextExam.nextExam.subject ? `📚 **Subject:** ${nextExam.nextExam.subject}\n` : '') +
+                (nextExam.nextExam.location ? `📍 **Location / Hall:** ${nextExam.nextExam.location}\n` : '') +
+                `\n💡 *Tip: Keep your attendance above 75% to ensure full examination eligibility!*`,
+          widget: {
+            type: 'exam_countdown',
+            title: 'Exam Countdown',
+            data: { nextExam: nextExam.nextExam, daysRemaining: nextExam.days, allExams: upcomingExams }
+          }
+        };
+      }
+    }
+
+    // General Exam Schedule overview
+    const examList = upcomingExams.map(e => `• **${e.title}**: ${e.formattedDate} (${e.daysRemaining > 0 ? `in **${e.daysRemaining} days**` : 'Past/Ongoing'})`).join('\n');
+    return {
+      toolUsed: 'AcademicCalendarTool',
+      text: `🗓️ **Academic Calendar & Examination Schedule**:\n\n${examList}\n\n💡 *All exam schedules are verified against official university notifications.*`,
+      widget: {
+        type: 'calendar_events',
+        title: 'Semester Academic Schedule',
+        data: { events: upcomingExams }
+      }
+    };
+  }
+
+  // =============================================================
+  // ACTION B: DAILY PLANNER INTELLIGENCE
+  // =============================================================
+  if (clean.includes("plan my day") || clean.includes("daily planner") || clean.includes("what should i do today") || clean.includes("today summary")) {
+    const studentSubjects = loadStudentSubjects();
+    const overall = calculateOverallAttendance(studentSubjects);
+    const nextExam = getDaysUntilNextExam();
+    const freeRooms = findFreeClassrooms(defaultDay, currentTimeStr, minutesToTimeString(currentMinutes + 60));
+
+    return {
+      toolUsed: 'SmartDailyPlannerTool',
+      text: `🚀 **Your AI Daily Academic Gameplan (${defaultDay})**:\n\n` +
+            `1. **📊 Attendance Health:** Overall **${overall.overallPercentage}%** (${overall.overallRiskLevel} status).\n` +
+            (overall.criticalSubjectsCount > 0 ? `   ⚠️ *Urgent: You have ${overall.criticalSubjectsCount} subject(s) in Critical risk. Do not skip them today!*\n` : `   ✅ *All subjects are in good standing.*\n`) +
+            `2. **⏳ Upcoming Milestones:** Next exam in **${nextExam.days} days** (${nextExam.nextExam?.title || 'Mid-terms'}).\n` +
+            `3. **🏫 Quiet Study Spaces:** **${freeRooms.length} classrooms** are currently free right now at ${currentTimeStr}.\n\n` +
+            `💡 *Ask me for a specific subject attendance simulation or room vacancy anytime.*`,
+      widget: {
+        type: 'daily_planner',
+        title: `Daily Academic Plan - ${defaultDay}`,
+        data: { overall, nextExam, freeRoomsCount: freeRooms.length }
+      }
+    };
+  }
+
+  // =============================================================
+  // ACTION C: ATTENDANCE INTELLIGENCE & SIMULATION
+  // =============================================================
+  const isAttendanceQuery = clean.includes("attendance") || clean.includes("attend") || clean.includes("skip") || 
+                           clean.includes("bunk") || clean.includes("miss") || clean.includes("75%") || 
+                           clean.includes("classes needed") || clean.includes("safe skips");
+
+  if (isAttendanceQuery) {
+    const studentSubjects = loadStudentSubjects();
+    const overall = calculateOverallAttendance(studentSubjects);
+
+    // Scenario 1: Overall Attendance summary
+    if (clean.includes("overall") || clean.includes("total attendance") || clean.includes("all subjects") || clean.includes("summary") || clean.includes("average")) {
+      const breakdown = studentSubjects.map(s => {
+        const m = calculateSubjectMetrics(s);
+        return `• **${s.name}**: **${m.currentPercentage}%** (${s.attended}/${s.total}) → ${m.statusText}`;
+      }).join('\n');
+
+      return {
+        toolUsed: 'AttendanceOverviewTool',
+        text: `📊 **Student Attendance Overview**\n\n` +
+              `• **Total Conducted Lectures:** ${overall.totalConducted}\n` +
+              `• **Total Attended:** ${overall.totalAttended}\n` +
+              `• **Overall Attendance:** **${overall.overallPercentage}%** (${overall.overallRiskLevel} Risk Level)\n` +
+              `• **Status:** ${overall.safeSubjectsCount} Safe, ${overall.warningSubjectsCount} Warning, ${overall.criticalSubjectsCount} Critical\n\n` +
+              `**Subject Breakdown:**\n${breakdown}`,
+        widget: {
+          type: 'attendance_overview',
+          title: 'Overall Attendance Dashboard',
+          data: { overall, subjects: studentSubjects.map(s => calculateSubjectMetrics(s)) }
+        }
+      };
+    }
+
+    // Scenario 2: Lowest Attendance / At-risk query
+    if (clean.includes("lowest") || clean.includes("critical") || clean.includes("danger") || clean.includes("worst") || clean.includes("at risk")) {
+      if (!overall.lowestSubject) {
+        return {
+          toolUsed: 'AttendanceRiskTool',
+          text: `All your subjects currently maintain healthy attendance above 75%! 🎉`
+        };
+      }
+      const lowest = overall.lowestSubject;
+      return {
+        toolUsed: 'AttendanceRiskTool',
+        text: `⚠️ **Lowest Attendance Subject Alert**:\n\n` +
+              `• **Subject:** **${lowest.subject.name}** (${lowest.subject.code || 'Core'})\n` +
+              `• **Current Attendance:** **${lowest.currentPercentage}%** (${lowest.subject.attended}/${lowest.subject.total})\n` +
+              `• **Target:** ${lowest.subject.targetPercentage}%\n` +
+              `• **Requirement:** ${lowest.statusText}\n\n` +
+              `💡 *Recommendation: Prioritize attending all upcoming lectures in ${lowest.subject.name} to avoid exam debarment.*`,
+        widget: {
+          type: 'attendance_subject',
+          title: `Attendance Alert - ${lowest.subject.name}`,
+          data: { metrics: lowest }
+        }
+      };
+    }
+
+    // Scenario 3: Subject-specific Attendance & Simulation
+    const matchedSubject = findMatchingSubject(clean, studentSubjects);
+
+    if (matchedSubject) {
+      const metrics = calculateSubjectMetrics(matchedSubject);
+
+      // Check if user is simulating skipping / attending future classes
+      const skipMatch = clean.match(/skip\s*(\d+)/i) || clean.match(/miss\s*(\d+)/i) || clean.match(/bunk\s*(\d+)/i);
+      const attendMatch = clean.match(/attend\s*(\d+)/i) || clean.match(/go\s*to\s*(\d+)/i);
+
+      let futureAttended = 0;
+      let futureSkipped = 0;
+
+      if (skipMatch) futureSkipped = parseInt(skipMatch[1], 10);
+      if (attendMatch) futureAttended = parseInt(attendMatch[1], 10);
+
+      if (clean.includes("skip tomorrow") || clean.includes("miss tomorrow") || clean.includes("skip next class") || clean.includes("skip 1")) {
+        if (!skipMatch) futureSkipped = 1;
+      }
+
+      if (futureAttended > 0 || futureSkipped > 0) {
+        const sim = simulateAttendanceScenario(
+          matchedSubject.name,
+          matchedSubject.attended,
+          matchedSubject.total,
+          futureAttended,
+          futureSkipped,
+          matchedSubject.targetPercentage
+        );
+
+        return {
+          toolUsed: 'AttendanceSimulationEngine',
+          text: `🧮 **Attendance Simulation: ${matchedSubject.name}**\n\n` +
+                `• **Current:** ${sim.initialPercentage}% (${sim.initialAttended}/${sim.initialTotal})\n` +
+                `• **Scenario:** ${sim.futureAttended > 0 ? `Attend +${sim.futureAttended}` : ''} ${sim.futureSkipped > 0 ? `Skip -${sim.futureSkipped}` : ''}\n` +
+                `• **Projected Attendance:** **${sim.projectedPercentage}%** (${sim.projectedAttended}/${sim.projectedTotal})\n` +
+                `• **Change:** ${sim.percentageDelta >= 0 ? `+${sim.percentageDelta}%` : `${sim.percentageDelta}%`}\n` +
+                `• **Status:** ${sim.isAboveTarget ? '✅ Safe (Above Target)' : '⚠️ Danger (Below Target)'}\n\n` +
+                `👉 **Advice:** ${sim.adviceText}`,
+          widget: {
+            type: 'attendance_simulation',
+            title: `Simulation - ${matchedSubject.name}`,
+            data: { simulation: sim }
+          }
+        };
+      }
+
+      // Default subject status query
+      return {
+        toolUsed: 'SubjectAttendanceTool',
+        text: `📚 **Attendance Status: ${matchedSubject.name}**\n\n` +
+              `• **Attended:** ${matchedSubject.attended} / ${matchedSubject.total} lectures\n` +
+              `• **Percentage:** **${metrics.currentPercentage}%** (Target: ${matchedSubject.targetPercentage}%)\n` +
+              `• **Risk Level:** **${metrics.riskLevel}**\n` +
+              `• **Analysis:** ${metrics.statusText}`,
+        widget: {
+          type: 'attendance_subject',
+          title: matchedSubject.name,
+          data: { metrics }
+        }
+      };
+    }
+  }
+
+  // =============================================================
+  // ACTION D: Specific Room Schedule / Status Query
+  // =============================================================
+  const allRooms = getAllClassrooms();
+  let requestedRoom: string | null = null;
+
+  const explicitRoomMatch = clean.match(/(?:room|cr|lt|lab|audi)[-\s]?([0-9a-z]+)/i) || clean.match(/\b([0-9]{3}[a-z]?)\b/i);
+  if (explicitRoomMatch) {
+    const rawTarget = explicitRoomMatch[1];
+    const found = allRooms.find(r => normalizeRoom(r) === normalizeRoom(rawTarget) || normalizeRoom(r).includes(normalizeRoom(rawTarget)));
+    if (found) requestedRoom = found;
+  }
+
+  if (requestedRoom) {
+    const periods = getRoomPeriods(requestedRoom, targetDay);
+    const schedule = getRoomSchedule(requestedRoom, targetDay);
+
+    let currentOccupant = "Currently Free";
+    const currentClass = schedule.find(s => {
       const start = timeToMinutes(s.startTime);
       const end = timeToMinutes(s.endTime);
-      return isOverlapping(targetTimeMinutes, targetTimeMinutes + 1, start, end);
+      return currentMinutes >= start && currentMinutes <= end;
     });
 
-    if (activeClass) {
-      return {
-        toolUsed: 'InspectRoomActivityTool',
-        text: `📍 **Room ${targetRoom}** is currently **OCCUPIED** on ${targetDay} at ${targetTimeStr}.\n\n` +
-              `📚 **Current Lecture:** ${activeClass.subject}\n` +
-              `🎓 **Course & Batch:** ${activeClass.course} (Semester ${activeClass.semester}, Section ${activeClass.section})\n` +
-              `⏰ **Timing:** ${activeClass.startTime} - ${activeClass.endTime}\n\n` +
-              `💡 *The room will be free once this lecture concludes at ${activeClass.endTime}.*`,
-        widget: {
-          type: 'current_status',
-          title: `${targetRoom} Live Status`,
-          data: activeClass
-        }
-      };
-    } else {
-      const futureClasses = schedules.filter(s => timeToMinutes(s.startTime) > targetTimeMinutes);
-      let nextClassNotice = "No more classes scheduled today!";
-      if (futureClasses.length > 0) {
-        nextClassNotice = `The next lecture is **${futureClasses[0].subject}** (${futureClasses[0].course}) at **${futureClasses[0].startTime}**.`;
-      }
-
-      return {
-        toolUsed: 'InspectRoomActivityTool',
-        text: `🟢 **Room ${targetRoom}** is completely **VACANT / FREE** on ${targetDay} at ${targetTimeStr}!\n\n` +
-              `⏳ ${nextClassNotice}\n\n` +
-              `✨ *You can safely utilize this room for self-study or group discussion.*`,
-        widget: {
-          type: 'room_periods',
-          title: `${targetRoom} Availability`,
-          data: { periods: getRoomPeriods(targetRoom, targetDay), room: targetRoom }
-        }
-      };
-    }
-  }
-
-  // =============================================================
-  // ACTION B: Specific Room Schedule / Timetable query
-  // =============================================================
-  if (targetRoom && (clean.includes("schedule") || clean.includes("classes") || clean.includes("timetable") || clean.includes("lectures") || clean.includes("routine"))) {
-    const schedule = getRoomSchedule(targetRoom, targetDay);
-    if (schedule.length === 0) {
-      return {
-        toolUsed: 'RoomScheduleTool',
-        text: `✨ **Room ${targetRoom}** has **no scheduled classes** on **${targetDay}**.\n\nIt is available throughout the entire college hours (08:00 AM - 05:00 PM).`,
-        widget: {
-          type: 'room_schedule',
-          title: `${targetRoom} - ${targetDay}`,
-          data: { schedule: [], room: targetRoom }
-        }
-      };
+    if (currentClass) {
+      currentOccupant = `Occupied: ${currentClass.subject} (${currentClass.course} ${currentClass.section})`;
     }
 
-    const classListMd = schedule.map((s, i) => `${i + 1}. **${s.startTime} - ${s.endTime}**: ${s.subject} (${s.course}, Sec ${s.section}, Sem ${s.semester})`).join('\n');
     return {
       toolUsed: 'RoomScheduleTool',
-      text: `📅 Here is the complete schedule for **Room ${targetRoom}** on **${targetDay}** (${schedule.length} lecture blocks scheduled):\n\n${classListMd}\n\n💡 *Check the schedule card below for more details.*`,
-      widget: {
-        type: 'room_schedule',
-        title: `${targetRoom} Schedule (${targetDay})`,
-        data: { schedule, room: targetRoom }
-      }
-    };
-  }
-
-  // =============================================================
-  // ACTION C: Specific Room Timeline / Vacancy periods query
-  // =============================================================
-  if (targetRoom && (clean.includes("timeline") || clean.includes("free slots") || clean.includes("availability") || clean.includes("periods") || clean.includes("when is it free") || clean.includes("is room free") || clean.includes("is it empty"))) {
-    const periods = getRoomPeriods(targetRoom, targetDay);
-    const freeSlots = periods.filter(p => p.status === 'FREE');
-    const freeSlotsText = freeSlots.map(p => `• **${p.start} - ${p.end}** (Free)`).join('\n');
-
-    return {
-      toolUsed: 'RoomTimelineTool',
-      text: `🕒 Here is the availability breakdown for **Room ${targetRoom}** on **${targetDay}**:\n\n` +
-            `**Free Slots Available:**\n${freeSlotsText || '• No free slots today'}\n\n` +
-            `💡 *Hover or tap on the timeline blocks below to see subject details.*`,
+      text: `🏫 **Room ${requestedRoom} Status on ${targetDay}**:\n\n` +
+            `• **Current Status (${currentTimeStr}):** **${currentOccupant}**\n` +
+            `• **Scheduled Classes Today:** ${schedule.length} lecture periods.\n\n` +
+            `Detailed timeline and period breakdown are displayed in the interactive card below:`,
       widget: {
         type: 'room_periods',
-        title: `${targetRoom} Availability Timeline`,
-        data: { periods, room: targetRoom }
+        title: `Room ${requestedRoom} - ${targetDay}`,
+        data: {
+          room: requestedRoom,
+          day: targetDay,
+          periods,
+          schedule
+        }
       }
     };
   }
 
   // =============================================================
-  // ACTION D: Subject Locator (Where is Python / Cryptography / OOPS?)
+  // ACTION E: Subject Timetable Query
   // =============================================================
-  const allSubjects = Array.from(new Set(TIMETABLE.map(t => t.subject)));
-  const matchedSubject = allSubjects.find(sub => clean.includes(sub.toLowerCase()) || clean.includes(sub.toLowerCase().replace(/[^a-z0-9]/g, "")));
-  
-  if (matchedSubject && (clean.includes("where") || clean.includes("when") || clean.includes("which room") || clean.includes("timing") || clean.includes("subject") || clean.includes("class of") || clean.includes("lecture of"))) {
-    const matches = TIMETABLE.filter(t => t.subject.toLowerCase() === matchedSubject.toLowerCase() && t.day.toLowerCase() === targetDay.toLowerCase());
+  const subjectKeywords = ["oops", "c++", "cloud", "crypto", "python", "career", "dbms", "discrete", "math", "linux", "compiler", "network", "algorithms"];
+  const matchedSubject = subjectKeywords.find(s => clean.includes(s));
+  if (matchedSubject && (clean.includes("when") || clean.includes("schedule") || clean.includes("class") || clean.includes("lecture") || clean.includes("where"))) {
+    const matches = TIMETABLE.filter(t => t.subject.toLowerCase().includes(matchedSubject) && t.day.toLowerCase() === targetDay.toLowerCase())
+      .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
     
     if (matches.length > 0) {
-      const listMd = matches.map(m => `• **${m.start_time} - ${m.end_time}** in **Room ${m.room_number}** (${m.course} Sem ${m.semester}, Sec ${m.section})`).join('\n');
+      const listMd = matches.slice(0, 6).map(m => `• **${m.start_time} - ${m.end_time}**: ${m.subject} (${m.course} Sec-${m.section}) in **Room ${m.room_number}**`).join('\n');
       return {
-        toolUsed: 'SubjectLocatorTool',
-        text: `📖 Lectures for **${matchedSubject}** on **${targetDay}**:\n\n${listMd}`,
+        toolUsed: 'SubjectScheduleTool',
+        text: `📚 Found **${matches.length} lectures** for **${matchedSubject.toUpperCase()}** on **${targetDay}**:\n\n${listMd}`,
         widget: {
           type: 'room_schedule',
-          title: `${matchedSubject} Lectures`,
+          title: `${matchedSubject.toUpperCase()} Lectures`,
           data: {
             schedule: matches.map(m => ({ startTime: m.start_time, endTime: m.end_time, course: m.course, semester: m.semester, section: m.section, subject: m.subject })),
             room: matches[0].room_number
@@ -535,10 +697,10 @@ export function runAgenticAI(userQuery: string): AgentResponse {
   }
 
   // =============================================================
-  // ACTION E: Section Timetable Query (e.g. "Section A routine", "Sec ML1")
+  // ACTION F: Section Timetable Query
   // =============================================================
   const sectionMatch = clean.match(/sec(?:tion)?\s*([a-z0-9+-]+)/i) || clean.match(/\b([a-z0-9]{1,3})\s*section\b/i);
-  if (sectionMatch && (clean.includes("timetable") || clean.includes("schedule") || clean.includes("classes") || clean.includes("routine") || clean.includes("routine for") || clean.includes("periods"))) {
+  if (sectionMatch && (clean.includes("timetable") || clean.includes("schedule") || clean.includes("classes") || clean.includes("routine") || clean.includes("periods"))) {
     const secName = sectionMatch[1].toUpperCase();
     const sectionClasses = TIMETABLE.filter(t => t.section.toUpperCase() === secName && t.day.toLowerCase() === targetDay.toLowerCase())
       .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
@@ -561,36 +723,7 @@ export function runAgenticAI(userQuery: string): AgentResponse {
   }
 
   // =============================================================
-  // ACTION F: Campus Statistics / Overview
-  // =============================================================
-  if (clean.includes("how many classrooms") || clean.includes("stats") || clean.includes("statistics") || clean.includes("total rooms") || clean.includes("campus overview") || clean.includes("how many labs") || clean.includes("how many lts")) {
-    const totalRooms = allRooms.length;
-    const labs = allRooms.filter(r => r.toUpperCase().includes("LAB")).length;
-    const lts = allRooms.filter(r => r.toUpperCase().includes("LT")).length;
-    const audis = allRooms.filter(r => r.toUpperCase().includes("AUDI")).length;
-    const crs = totalRooms - labs - lts - audis;
-    const freeRightNow = findFreeClassrooms(targetDay, currentTimeStr, minutesToTimeString(currentMinutes + 50));
-
-    return {
-      toolUsed: 'CampusAnalyticsTool',
-      text: `📊 **GEHU Campus Infrastructure & Analytics**:\n\n` +
-            `• **Total Rooms Tracked:** ${totalRooms}\n` +
-            `• **Lecture Theatres (LT):** ${lts}\n` +
-            `• **Laboratories (LAB):** ${labs}\n` +
-            `• **Auditoriums:** ${audis}\n` +
-            `• **Classrooms (CR):** ${crs}\n` +
-            `• **Currently Free Right Now (${targetDay} ${currentTimeStr}):** **${freeRightNow.length}** rooms available.\n\n` +
-            `💡 *Type 'Which rooms are free right now?' to see the full list of empty rooms.*`,
-      widget: {
-        type: 'free_rooms',
-        title: `Live Vacant Rooms (${currentTimeStr})`,
-        data: { rooms: freeRightNow }
-      }
-    };
-  }
-
-  // =============================================================
-  // ACTION G: Vacant Rooms Query (ONLY triggered if explicitly looking for free rooms)
+  // ACTION G: Vacant Rooms Query
   // =============================================================
   const isLookingForFreeRooms = clean.includes("free") || clean.includes("vacant") || clean.includes("empty") || 
                                clean.includes("available") || clean.includes("unoccupied") || clean.includes("find room") || 
@@ -632,16 +765,15 @@ export function runAgenticAI(userQuery: string): AgentResponse {
   }
 
   // =============================================================
-  // FALLBACK INTENT: THOUGHTFUL AGENT ASSISTANCE
+  // FALLBACK INTENT
   // =============================================================
   return {
     toolUsed: 'GeneralAssistanceTool',
     text: `🤔 I understand your query: *"${userQuery}"*.\n\n` +
-          `I am specifically trained on the **GEHU Campus Timetable & Classroom Database**. Here are some helpful ways I can assist you:\n\n` +
-          `• 🔍 **Find Free Classrooms:** *"Are any rooms free right now?"* or *"Free labs at 2 PM"*\n` +
-          `• 🏫 **Check Room Status:** *"What class is in room 124 right now?"* or *"Schedule of room 206"*\n` +
-          `• 🎓 **Section Routines:** *"Show Section A timetable on Tuesday"*\n` +
-          `• 📖 **Find Subjects:** *"When is Python class?"* or *"Where is OOPS Lab?"*\n` +
-          `• 📊 **Campus Statistics:** *"How many total classrooms are there?"*`
+          `I am your **AI Campus Operating Assistant**. You can paste or attach screenshots of your ERP, Timetable, or Academic Calendar directly, or ask:\n\n` +
+          `• 📸 **Image / OCR Scan:** Paste or upload your ERP attendance, timetable, or calendar screenshot!\n` +
+          `• 📊 **Attendance Intelligence:** *"Can I skip tomorrow's class?"* or *"What is my lowest attendance?"*\n` +
+          `• 🗓️ **Exam & Calendar:** *"When is my next exam?"* or *"How many days until mid-terms?"*\n` +
+          `• 🏫 **Classroom Vacancies:** *"Which rooms are free right now?"* or *"Free labs at 2 PM"*`
   };
 }
