@@ -44,7 +44,7 @@ interface ScannerVaultViewProps {
 }
 
 export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComplete }) => {
-  const [selectedDocType, setSelectedDocType] = useState<OCRDocType>('AUTO_DETECT');
+  const [selectedDocType] = useState<OCRDocType>('ERP_ATTENDANCE');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<string>('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -275,27 +275,16 @@ export const ScannerVaultView: React.FC<ScannerVaultViewProps> = ({ onSyncComple
               Upload Document / Screenshot
             </h3>
 
-            {/* Target Category Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400">Document Target</label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'AUTO_DETECT', label: 'Auto-Detect' },
-                  { id: 'ERP_ATTENDANCE', label: 'ERP Attendance' }
-                ].map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setSelectedDocType(opt.id as OCRDocType)}
-                    className={`px-3 py-2 text-xs font-medium rounded-xl border transition-all text-left ${
-                      selectedDocType === opt.id
-                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200 font-semibold'
-                        : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            {/* Dedicated Target Badge */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                <span className="text-slate-300 font-medium">Target Mode:</span>
+                <strong className="text-white">ERP Attendance Scanner</strong>
               </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                Direct Sync
+              </span>
             </div>
 
             {/* Drag and Drop Zone */}

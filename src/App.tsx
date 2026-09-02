@@ -129,7 +129,7 @@ export default function App() {
             const base64 = await fileToBase64(blob);
             setAttachedImage({
               base64,
-              docType: 'AUTO_DETECT',
+              docType: 'ERP_ATTENDANCE',
               name: 'Pasted Screenshot.png'
             });
             break;
@@ -195,7 +195,7 @@ export default function App() {
     const base64 = await fileToBase64(file);
     setAttachedImage({
       base64,
-      docType: 'AUTO_DETECT',
+      docType: 'ERP_ATTENDANCE',
       name: file.name
     });
   };
