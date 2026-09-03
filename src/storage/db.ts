@@ -2,9 +2,13 @@
 // INDEXEDDB ASYNC DATABASE & STORAGE ENGINE (GIGABYTE CAPACITY)
 // -------------------------------------------------------------
 import { get, set, del, createStore } from 'idb-keyval';
-import { AttendanceSubject, DEFAULT_SUBJECTS } from '../engines/attendanceEngine';
-import { AcademicCalendarEvent, DEFAULT_ACADEMIC_EVENTS } from '../engines/academicCalendarEngine';
-import { OCRScanResult } from '../engines/ocrEngine';
+import { 
+  AttendanceSubject, 
+  DEFAULT_SUBJECTS, 
+  AcademicCalendarEvent, 
+  DEFAULT_ACADEMIC_EVENTS,
+  OCRScanResult
+} from './defaults';
 
 // Create dedicated IndexedDB store
 const customDBStore = createStore('CampusOS_Database', 'CampusOS_Store');
@@ -47,28 +51,37 @@ class DatabaseMemoryCache {
 
   // 1. Initial Synchronous Fallback & Asynchronous IndexedDB Sync
   private initSyncFromStorage() {
+    // Default values first
+    this.attendance = Array.isArray(DEFAULT_SUBJECTS) ? [...DEFAULT_SUBJECTS] : [];
+    this.academicCalendar = Array.isArray(DEFAULT_ACADEMIC_EVENTS) ? [...DEFAULT_ACADEMIC_EVENTS] : [];
+
     // Read from legacy localStorage if present for seamless migration
     try {
-      const legacyAtt = localStorage.getItem('campusos_student_attendance');
-      if (legacyAtt) {
-        this.attendance = JSON.parse(legacyAtt);
-      } else {
-        this.attendance = DEFAULT_SUBJECTS;
-      }
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const legacyAtt = window.localStorage.getItem('campusos_student_attendance');
+        if (legacyAtt) {
+          const parsed = JSON.parse(legacyAtt);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.attendance = parsed;
+          }
+        }
 
-      const legacyCal = localStorage.getItem('campusos_academic_calendar');
-      if (legacyCal) {
-        this.academicCalendar = JSON.parse(legacyCal);
-      } else {
-        this.academicCalendar = DEFAULT_ACADEMIC_EVENTS;
+        const legacyCal = window.localStorage.getItem('campusos_academic_calendar');
+        if (legacyCal) {
+          const parsed = JSON.parse(legacyCal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.academicCalendar = parsed;
+          }
+        }
       }
-    } catch {
-      this.attendance = DEFAULT_SUBJECTS;
-      this.academicCalendar = DEFAULT_ACADEMIC_EVENTS;
+    } catch (err) {
+      console.warn('Storage sync fallback note:', err);
     }
 
     // Now async load from IndexedDB (the real unlimited database)
-    this.hydrateFromIndexedDB();
+    if (typeof window !== 'undefined') {
+      this.hydrateFromIndexedDB();
+    }
   }
 
   public async hydrateFromIndexedDB(): Promise<void> {

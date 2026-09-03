@@ -2,17 +2,14 @@
 // DETERMINISTIC ATTENDANCE & MATHEMATICAL SIMULATION ENGINE
 // -------------------------------------------------------------
 
-export type AttendanceRiskLevel = 'SAFE' | 'WARNING' | 'CRITICAL';
+import { 
+  AttendanceRiskLevel, 
+  AttendanceSubject, 
+  DEFAULT_SUBJECTS 
+} from '../storage/defaults';
 
-export interface AttendanceSubject {
-  id: string;
-  name: string;
-  code?: string;
-  attended: number;
-  total: number;
-  targetPercentage: number;
-  notes?: string;
-}
+export type { AttendanceRiskLevel, AttendanceSubject };
+export { DEFAULT_SUBJECTS };
 
 export interface SubjectAttendanceMetrics {
   subject: AttendanceSubject;
@@ -52,50 +49,6 @@ export interface SimulationResult {
   recoveryClassesNeeded: number;
   adviceText: string;
 }
-
-// Default initial subject seed if student hasn't entered data yet
-export const DEFAULT_SUBJECTS: AttendanceSubject[] = [
-  {
-    id: 'sub_1',
-    name: 'Object Oriented Programming with C++',
-    code: 'TCS-301',
-    attended: 28,
-    total: 32,
-    targetPercentage: 75
-  },
-  {
-    id: 'sub_2',
-    name: 'Fundamentals of Cloud Computing and Big Data',
-    code: 'TCS-302',
-    attended: 22,
-    total: 30,
-    targetPercentage: 75
-  },
-  {
-    id: 'sub_3',
-    name: 'Introduction to Cryptography',
-    code: 'TCS-303',
-    attended: 17,
-    total: 25,
-    targetPercentage: 75
-  },
-  {
-    id: 'sub_4',
-    name: 'Python Programming',
-    code: 'TCS-304',
-    attended: 29,
-    total: 34,
-    targetPercentage: 75
-  },
-  {
-    id: 'sub_5',
-    name: 'Career Skills-I',
-    code: 'XCS-301',
-    attended: 14,
-    total: 16,
-    targetPercentage: 75
-  }
-];
 
 // -------------------------------------------------------------
 // PURE DETERMINISTIC MATHEMATICS

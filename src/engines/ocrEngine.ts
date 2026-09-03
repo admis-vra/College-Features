@@ -4,7 +4,7 @@
 import { createWorker } from 'tesseract.js';
 import { AttendanceSubject } from './attendanceEngine';
 import { AcademicCalendarEvent } from './academicCalendarEngine';
-import { TimetableEntry } from '../agent/agentEngine';
+import { TimetableEntry } from '../utils/timetableEngine';
 
 export type OCRDocType = 'ERP_ATTENDANCE' | 'TIMETABLE' | 'ACADEMIC_CALENDAR' | 'AUTO_DETECT' | 'UNKNOWN';
 
